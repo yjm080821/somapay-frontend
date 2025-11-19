@@ -157,7 +157,12 @@
 			return;
 		}
 
-		throw new Error('사용자 정보를 확인할 수 없습니다.');
+		userProfile = {
+			id: session.userId ?? undefined,
+			username: session.username ?? '사용자',
+			point: userProfile?.point ?? 0,
+			role: session.role ?? 'USER'
+		};
 	}
 
 	async function loadUserChargeRequests() {
