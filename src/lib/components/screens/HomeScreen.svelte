@@ -66,14 +66,8 @@
 			emoji: '🍱',
 			roles: ['HOST', 'ADMIN']
 		},
-		{
-			id: 'credentials',
-			label: '보안설정',
-			description: '비밀번호/PIN',
-			emoji: '🔐',
-			roles: ['USER', 'HOST', 'ADMIN']
-		}
-	];
+	// 보안설정은 헤더 버튼으로 이동했으므로 리스트에서 제외
+];
 
 	$: normalizedRole = (role || '').toUpperCase() || 'USER';
 
