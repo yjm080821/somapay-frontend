@@ -26,9 +26,9 @@
 	let canManageProducts = false;
 	let manageBoothId = '';
 	let managedProducts = [];
-	let newProductForm = { name: '', description: '', price: '', quantity: '' };
+	let newProductForm = { name: '', description: '', price: '' };
 	let editingProductId = null;
-	let editingProductForm = { name: '', description: '', price: '', quantity: '' };
+	let editingProductForm = { name: '', description: '', price: '' };
 
 	function goTo(screen) {
 		dispatch('navigate', screen);
@@ -120,16 +120,14 @@
 		const name = newProductForm.name.trim();
 		const description = newProductForm.description.trim();
 		const price = newProductForm.price;
-		const quantity = newProductForm.quantity;
-		if (!name || price === '' || quantity === '') return;
+		if (!name || price === '') return;
 		dispatch('createProduct', {
 			boothId,
 			name,
 			description,
-			price,
-			quantity
+			price
 		});
-		newProductForm = { name: '', description: '', price: '', quantity: '' };
+		newProductForm = { name: '', description: '', price: '' };
 	}
 
 	function startEditProduct(product) {
@@ -137,14 +135,13 @@
 		editingProductForm = {
 			name: product.name ?? '',
 			description: product.description ?? '',
-			price: product.price ?? '',
-			quantity: product.quantity ?? ''
+			price: product.price ?? ''
 		};
 	}
 
 	function cancelEditProduct() {
 		editingProductId = null;
-		editingProductForm = { name: '', description: '', price: '', quantity: '' };
+		editingProductForm = { name: '', description: '', price: '' };
 	}
 
 	function submitProductUpdate() {
@@ -153,8 +150,7 @@
 			id: editingProductId,
 			name: editingProductForm.name,
 			description: editingProductForm.description,
-			price: editingProductForm.price,
-			quantity: editingProductForm.quantity
+			price: editingProductForm.price
 		});
 		cancelEditProduct();
 	}
@@ -239,7 +235,7 @@
 			<div>
 				<h2 class="text-base font-semibold text-gray-900">포인트 충전</h2>
 				<p class="text-xs text-gray-500">
-					충전 요청은 관리자 승인 후 적용됩니다.<br/>
+					충전 요청은 관리자 승인 후 적용됩니다.<br />
 					1002-2531-2071 토스뱅크 양지민
 				</p>
 			</div>
@@ -522,7 +518,7 @@
 									<div>
 										<p class="text-sm font-semibold text-gray-900">{product.name}</p>
 										<p class="text-xs text-gray-500">
-											ID: {product.id} · {formatCurrency(product.price)} · 재고 {product.quantity}
+											ID: {product.id} · {formatCurrency(product.price)}
 										</p>
 										{#if product.description}
 											<p class="text-xs text-gray-500">{product.description}</p>
@@ -541,20 +537,12 @@
 												placeholder="설명"
 												bind:value={editingProductForm.description}
 											/>
-											<div class="grid grid-cols-2 gap-2">
-												<input
-													type="number"
-													class="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 focus:outline-none"
-													placeholder="가격"
-													bind:value={editingProductForm.price}
-												/>
-												<input
-													type="number"
-													class="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 focus:outline-none"
-													placeholder="수량"
-													bind:value={editingProductForm.quantity}
-												/>
-											</div>
+											<input
+												type="number"
+												class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 focus:outline-none"
+												placeholder="가격"
+												bind:value={editingProductForm.price}
+											/>
 											<div class="flex gap-2">
 												<button
 													type="button"
@@ -609,22 +597,13 @@
 						placeholder="설명"
 						bind:value={newProductForm.description}
 					/>
-					<div class="grid grid-cols-2 gap-2">
-						<input
-							type="number"
-							min="0"
-							class="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 focus:outline-none"
-							placeholder="가격"
-							bind:value={newProductForm.price}
-						/>
-						<input
-							type="number"
-							min="0"
-							class="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 focus:outline-none"
-							placeholder="수량"
-							bind:value={newProductForm.quantity}
-						/>
-					</div>
+					<input
+						type="number"
+						min="0"
+						class="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 focus:outline-none"
+						placeholder="가격"
+						bind:value={newProductForm.price}
+					/>
 					<button
 						type="submit"
 						class="w-full rounded-lg bg-cyan-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-cyan-700"

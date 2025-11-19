@@ -445,8 +445,8 @@
 	}
 
 	async function handleCreateProduct(event) {
-		const { boothId, name, description, price, quantity } = event.detail || {};
-		if (!boothId || !name || price === '' || quantity === '') {
+		const { boothId, name, description, price } = event.detail || {};
+		if (!boothId || !name || price === '') {
 			return;
 		}
 		globalError = '';
@@ -455,8 +455,7 @@
 				booth_id: Number(boothId),
 				name: name.trim(),
 				description: description?.trim() || '',
-				price: Number(price),
-				quantity: Number(quantity)
+				price: Number(price)
 			});
 			await refreshBoothsAndProducts();
 		} catch (error) {
@@ -465,7 +464,7 @@
 	}
 
 	async function handleUpdateProduct(event) {
-		const { id, name, description, price, quantity } = event.detail || {};
+		const { id, name, description, price } = event.detail || {};
 		if (!id) return;
 		const payload = {};
 		if (name !== undefined) {
@@ -479,9 +478,6 @@
 		}
 		if (price !== undefined && price !== '') {
 			payload.price = Number(price);
-		}
-		if (quantity !== undefined && quantity !== '') {
-			payload.quantity = Number(quantity);
 		}
 		if (!Object.keys(payload).length) {
 			return;
