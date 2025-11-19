@@ -73,7 +73,7 @@
 	}
 
 	function isLoggedIn() {
-		return Boolean(session.token);
+		return Boolean(session.token || api.getStoredToken());
 	}
 
 	function currentRole() {
