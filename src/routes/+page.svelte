@@ -138,6 +138,12 @@
 			}
 		}
 
+		if (session.userId) {
+			const user = await api.getUser(session.userId);
+			assignUser(user);
+			return;
+		}
+
 		const numericCandidate = Number(session.username);
 		if (!Number.isNaN(numericCandidate) && numericCandidate > 0) {
 			try {
@@ -145,7 +151,7 @@
 				assignUser(user);
 				return;
 			} catch {
-				// ignore and keep trying
+				// ignore and fall through
 			}
 		}
 
@@ -157,12 +163,7 @@
 			return;
 		}
 
-		userProfile = {
-			id: session.userId ?? undefined,
-			username: session.username ?? '사용자',
-			point: userProfile?.point ?? 0,
-			role: session.role ?? 'USER'
-		};
+		throw new Error('사용자 정보를 확인할 수 없습니다.');
 	}
 
 	async function loadUserChargeRequests() {
@@ -304,7 +305,7 @@
 			const payload = await api.login({ studentNumber, password });
 			session = {
 				token: payload.token,
-				userId: null,
+				userId: payload.userId ?? null,
 				username: studentNumber,
 				role: null
 			};
