@@ -25,20 +25,20 @@
 <div class="flex min-h-screen flex-col items-center justify-center bg-gray-50 px-6">
 	<div class="w-full max-w-md rounded-2xl bg-white p-8 shadow-lg">
 		<div class="mb-8 text-center">
-			<p class="text-sm font-medium text-gray-500">소마페이 관리자</p>
+			<p class="text-sm font-medium text-gray-500">소마페이</p>
 			<h1 class="mt-2 text-2xl font-bold text-gray-900">서비스에 로그인하세요</h1>
 		</div>
 
 		<form class="space-y-5" on:submit={handleSubmit}>
 			<div>
 				<label class="mb-2 block text-sm font-semibold text-gray-700" for="student-number">
-					학번
+					ID
 				</label>
 				<input
 					id="student-number"
 					type="text"
 					name="student-number"
-					placeholder="예) 2501"
+					placeholder="예) gbsw240314"
 					bind:value={studentNumber}
 					class="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm shadow-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 focus:outline-none"
 					autocomplete="username"

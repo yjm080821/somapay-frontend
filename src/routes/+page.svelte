@@ -12,6 +12,7 @@
 
 	let currentScreen = 'home';
 	let session = { token: null, userId: null, username: null, role: null };
+	let loggedIn = false;
 	let appReady = false;
 	let loginPending = false;
 	let loginError = '';
@@ -21,6 +22,10 @@
 	let booths = [];
 	let products = [];
 	let menuError = '';
+	let roleLabel = 'USER';
+	let normalizedRole = 'USER';
+	let isAdminRole = false;
+	let isHostRole = false;
 
 	let transactions = [];
 	let userChargeRequests = [];
@@ -35,6 +40,12 @@
 	let paymentResetKey = 0;
 
 	let historyLoading = false;
+
+	const normalizeStatus = (status) => (status || '').toUpperCase();
+	const filterPending = (requests) =>
+		Array.isArray(requests)
+			? requests.filter((request) => normalizeStatus(request.status) === 'PENDING')
+			: [];
 
 	function isBrowser() {
 		return typeof window !== 'undefined' && typeof localStorage !== 'undefined';
@@ -72,17 +83,20 @@
 		}
 	}
 
-	function isLoggedIn() {
-		return Boolean(session.token || api.getStoredToken());
-	}
+	$: loggedIn = Boolean(session.token);
 
 	function currentRole() {
-		return userProfile?.role || session.role || 'USER';
+		return roleLabel;
 	}
 
 	function isAdmin() {
 		return (currentRole() || '').toUpperCase() === 'ADMIN';
 	}
+
+	$: roleLabel = userProfile?.role || session.role || 'USER';
+	$: normalizedRole = (roleLabel || '').toUpperCase();
+	$: isAdminRole = normalizedRole === 'ADMIN';
+	$: isHostRole = normalizedRole === 'HOST';
 
 	function saveSession() {
 		if (!isBrowser()) return;
@@ -136,12 +150,6 @@
 			} catch {
 				session.userId = null;
 			}
-		}
-
-		if (session.userId) {
-			const user = await api.getUser(session.userId);
-			assignUser(user);
-			return;
 		}
 
 		const numericCandidate = Number(session.username);
@@ -214,9 +222,13 @@
 	}
 
 	async function bootstrap() {
-		if (!isLoggedIn()) {
+		const activeToken = session.token || api.getStoredToken();
+		if (!activeToken) {
 			appReady = true;
 			return;
+		}
+		if (!session.token) {
+			session = { ...session, token: activeToken };
 		}
 
 		appReady = false;
@@ -234,7 +246,8 @@
 
 			if (isAdmin()) {
 				try {
-					adminChargeRequests = await api.listChargeRequests();
+					const list = await api.listChargeRequests();
+					adminChargeRequests = filterPending(list);
 				} catch (error) {
 					globalError = error.message || '충전 요청을 불러오지 못했습니다.';
 				}
@@ -250,7 +263,11 @@
 	}
 
 	async function refreshUserProfile() {
-		if (!isLoggedIn()) return;
+		const activeToken = session.token || api.getStoredToken();
+		if (!activeToken) return;
+		if (!session.token) {
+			session = { ...session, token: activeToken };
+		}
 		try {
 			if (!session.userId) {
 				await ensureUserProfile(transactions);
@@ -266,7 +283,11 @@
 	}
 
 	async function refreshTransactions() {
-		if (!isLoggedIn()) return;
+		const activeToken = session.token || api.getStoredToken();
+		if (!activeToken) return;
+		if (!session.token) {
+			session = { ...session, token: activeToken };
+		}
 		historyLoading = true;
 		try {
 			const list = await api.listTransactions();
@@ -285,7 +306,8 @@
 		}
 
 		try {
-			adminChargeRequests = await api.listChargeRequests();
+			const list = await api.listChargeRequests();
+			adminChargeRequests = filterPending(list);
 		} catch (error) {
 			globalError = error.message || '충전 요청을 불러오지 못했습니다.';
 		}
@@ -346,10 +368,8 @@
 		if (!id) return;
 		adminActionPendingId = id;
 		try {
-			const updated = await api.updateChargeRequest(id, 'APPROVED');
-			adminChargeRequests = adminChargeRequests.map((request) =>
-				request.id === id ? updated : request
-			);
+			await api.updateChargeRequest(id, 'APPROVED');
+			adminChargeRequests = adminChargeRequests.filter((request) => request.id !== id);
 			await Promise.all([refreshUserProfile(), loadUserChargeRequests(), refreshAdminCharges()]);
 		} catch (error) {
 			globalError = error.message || '충전 승인 중 오류가 발생했습니다.';
@@ -363,15 +383,127 @@
 		if (!id) return;
 		adminActionPendingId = id;
 		try {
-			const updated = await api.updateChargeRequest(id, 'REJECTED');
-			adminChargeRequests = adminChargeRequests.map((request) =>
-				request.id === id ? updated : request
-			);
+			await api.updateChargeRequest(id, 'REJECTED');
+			adminChargeRequests = adminChargeRequests.filter((request) => request.id !== id);
 			await refreshAdminCharges();
 		} catch (error) {
 			globalError = error.message || '충전 거절 중 오류가 발생했습니다.';
 		} finally {
 			adminActionPendingId = null;
+		}
+	}
+
+	async function handleCreateBooth(event) {
+		const { name, userId } = event.detail || {};
+		if (!name || !userId) {
+			return;
+		}
+		globalError = '';
+		try {
+			await api.createBooth({
+				name: name.trim(),
+				user_id: Number(userId)
+			});
+			await refreshBoothsAndProducts();
+		} catch (error) {
+			globalError = error.message || '부스를 생성하지 못했습니다.';
+		}
+	}
+
+	async function handleUpdateBooth(event) {
+		const { id, name, userId } = event.detail || {};
+		if (!id) return;
+		const payload = {};
+		if (name && name.trim()) {
+			payload.name = name.trim();
+		}
+		if (userId) {
+			payload.user_id = Number(userId);
+		}
+		if (!Object.keys(payload).length) {
+			return;
+		}
+		globalError = '';
+		try {
+			await api.updateBooth(id, payload);
+			await refreshBoothsAndProducts();
+		} catch (error) {
+			globalError = error.message || '부스를 수정하지 못했습니다.';
+		}
+	}
+
+	async function handleDeleteBooth(event) {
+		const { id } = event.detail || {};
+		if (!id) return;
+		globalError = '';
+		try {
+			await api.deleteBooth(id);
+			await refreshBoothsAndProducts();
+		} catch (error) {
+			globalError = error.message || '부스를 삭제하지 못했습니다.';
+		}
+	}
+
+	async function handleCreateProduct(event) {
+		const { boothId, name, description, price, quantity } = event.detail || {};
+		if (!boothId || !name || price === '' || quantity === '') {
+			return;
+		}
+		globalError = '';
+		try {
+			await api.createProduct({
+				booth_id: Number(boothId),
+				name: name.trim(),
+				description: description?.trim() || '',
+				price: Number(price),
+				quantity: Number(quantity)
+			});
+			await refreshBoothsAndProducts();
+		} catch (error) {
+			globalError = error.message || '상품을 생성하지 못했습니다.';
+		}
+	}
+
+	async function handleUpdateProduct(event) {
+		const { id, name, description, price, quantity } = event.detail || {};
+		if (!id) return;
+		const payload = {};
+		if (name !== undefined) {
+			const trimmed = name.trim();
+			if (trimmed) {
+				payload.name = trimmed;
+			}
+		}
+		if (description !== undefined) {
+			payload.description = description.trim();
+		}
+		if (price !== undefined && price !== '') {
+			payload.price = Number(price);
+		}
+		if (quantity !== undefined && quantity !== '') {
+			payload.quantity = Number(quantity);
+		}
+		if (!Object.keys(payload).length) {
+			return;
+		}
+		globalError = '';
+		try {
+			await api.updateProduct(id, payload);
+			await refreshBoothsAndProducts();
+		} catch (error) {
+			globalError = error.message || '상품을 수정하지 못했습니다.';
+		}
+	}
+
+	async function handleDeleteProduct(event) {
+		const { id } = event.detail || {};
+		if (!id) return;
+		globalError = '';
+		try {
+			await api.deleteProduct(id);
+			await refreshBoothsAndProducts();
+		} catch (error) {
+			globalError = error.message || '상품을 삭제하지 못했습니다.';
 		}
 	}
 
@@ -435,11 +567,18 @@
 			}
 		}
 
+		const storedToken = api.getStoredToken();
+		if (storedToken) {
+			session = { ...session, token: storedToken };
+			bootstrap();
+			return;
+		}
+
 		appReady = true;
 	});
 </script>
 
-{#if !isLoggedIn()}
+{#if !loggedIn}
 	<LoginScreen on:login={handleLogin} {loginPending} error={loginError} />
 {:else if !appReady}
 	<div class="flex min-h-screen items-center justify-center bg-gray-50">
@@ -462,7 +601,11 @@
 					{transactions}
 					charges={userChargeRequests}
 					chargeRequests={adminChargeRequests}
-					role={currentRole()}
+					role={roleLabel}
+					{booths}
+					{products}
+					isAdmin={isAdminRole}
+					isHost={isHostRole}
 					{chargePending}
 					{chargeError}
 					{adminActionPendingId}
@@ -471,6 +614,12 @@
 					on:approveCharge={handleApproveCharge}
 					on:rejectCharge={handleRejectCharge}
 					on:logout={handleLogout}
+					on:createBooth={handleCreateBooth}
+					on:updateBooth={handleUpdateBooth}
+					on:deleteBooth={handleDeleteBooth}
+					on:createProduct={handleCreateProduct}
+					on:updateProduct={handleUpdateProduct}
+					on:deleteProduct={handleDeleteProduct}
 				/>
 			{:else if currentScreen === 'payment'}
 				<PaymentScreen
