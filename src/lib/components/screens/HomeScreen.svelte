@@ -26,9 +26,11 @@
 	let canManageProducts = false;
 	let manageBoothId = '';
 	let managedProducts = [];
+	let managedBoothIds = new Set();
 	let newProductForm = { name: '', description: '', price: '' };
 	let editingProductId = null;
 	let editingProductForm = { name: '', description: '', price: '' };
+	let credentialForm = { password: '', pin: '' };
 
 	function goTo(screen) {
 		dispatch('navigate', screen);
@@ -59,6 +61,16 @@
 		dispatch('logout');
 	}
 
+	function submitCredentials() {
+		const password = credentialForm.password.trim();
+		const pin = credentialForm.pin.trim();
+		if (!password && !pin) {
+			return;
+		}
+		dispatch('updateCredentials', { password, pin });
+		credentialForm = { password: '', pin: '' };
+	}
+
 	$: canManageProducts = isAdmin || isHost;
 
 	$: {
@@ -79,6 +91,16 @@
 					(product) => String(product.boothId ?? product.booth_id ?? '') === manageBoothId
 				)
 			: [];
+
+	$: managedBoothIds = new Set(
+		Array.isArray(booths)
+			? booths
+					.filter((booth) =>
+						isAdmin ? true : isHost && (booth.userId === user?.id || booth.user_id === user?.id)
+					)
+					.map((booth) => booth.id)
+			: []
+	);
 
 	function submitNewBooth() {
 		const name = newBoothForm.name.trim();
@@ -161,16 +183,27 @@
 
 	$: normalizedTransactions = toArray(transactions)
 		.map((tx) => {
-			const boothName = tx.boothName || tx.edges?.booth?.name;
+			const boothId = tx.boothId ?? tx.booth_id ?? tx.edges?.booth?.id;
+			const boothName =
+				tx.boothName || tx.edges?.booth?.name || (boothId ? `부스 ${boothId}` : '부스 정보 없음');
+			const buyerId = tx.userId ?? tx.user_id ?? tx.edges?.user?.id;
+			const buyerName =
+				tx.edges?.user?.username || (buyerId ? `사용자 ${buyerId}` : '알 수 없는 사용자');
 			const amount = Number(tx.amount ?? 0);
-			const isSelf = user?.id && (tx.userId ?? tx.edges?.user?.id) === user.id;
+			const timestamp = formatDateTime(tx.timestamp || tx.createdAt || tx.updatedAt);
+			const managesBooth = managedBoothIds.has(boothId);
+			const isSelfBuyer = user?.id && buyerId === user.id;
 
 			return {
 				id: tx.id ?? getUid(),
-				title: boothName || tx.edges?.product?.name || `거래 #${tx.id || ''}`,
-				subtitle: formatDateTime(tx.timestamp || tx.createdAt || tx.updatedAt),
+				title: managesBooth
+					? boothName
+					: tx.edges?.product?.name || boothName || `거래 #${tx.id || ''}`,
+				subtitle: managesBooth
+					? `${timestamp} · 구매자: ${buyerName}`
+					: `${timestamp} · ${boothName}`,
 				amount: Math.abs(amount),
-				type: isSelf ? 'out' : 'in'
+				type: managesBooth ? 'in' : isSelfBuyer ? 'out' : 'in'
 			};
 		})
 		.slice(0, 5);
@@ -208,6 +241,34 @@
 		>
 			로그아웃
 		</button>
+	</div>
+
+	<div class="rounded-2xl bg-white p-4 shadow">
+		<h2 class="mb-3 text-sm font-semibold text-gray-900">비밀번호 / PIN 변경</h2>
+		<form class="grid gap-2 md:grid-cols-3" on:submit|preventDefault={submitCredentials}>
+			<input
+				type="password"
+				class="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 focus:outline-none"
+				placeholder="새 비밀번호"
+				bind:value={credentialForm.password}
+			/>
+			<input
+				type="password"
+				inputmode="numeric"
+				maxlength="6"
+				class="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 focus:outline-none"
+				placeholder="새 PIN (4~6자리)"
+				bind:value={credentialForm.pin}
+			/>
+			<button
+				type="submit"
+				class="rounded-lg bg-cyan-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-cyan-700 disabled:cursor-not-allowed disabled:bg-cyan-200"
+				disabled={!credentialForm.password.trim() && !credentialForm.pin.trim()}
+			>
+				변경하기
+			</button>
+		</form>
+		<p class="mt-1 text-xs text-gray-500">둘 중 하나만 입력해도 변경됩니다.</p>
 	</div>
 
 	<div class="rounded-2xl bg-cyan-600 p-6 text-white shadow-lg">

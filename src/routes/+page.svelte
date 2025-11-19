@@ -108,6 +108,23 @@
 		localStorage.removeItem(SESSION_KEY);
 	}
 
+	function isTokenError(error) {
+		return (
+			error?.status === 401 ||
+			error?.code === 'TOKEN_EXPIRED' ||
+			/(invalid token|unauthorized)/i.test(error?.message || '')
+		);
+	}
+
+	function handleAuthError(error) {
+		if (isTokenError(error)) {
+			loginError = '세션이 만료되었습니다. 다시 로그인해주세요.';
+			resetState();
+			return true;
+		}
+		return false;
+	}
+
 	function resetState() {
 		session = { token: null, userId: null, username: null, role: null };
 		userProfile = null;
@@ -186,7 +203,12 @@
 				api
 					.getChargeRequest(id)
 					.then((data) => data)
-					.catch(() => null)
+					.catch((error) => {
+						if (handleAuthError(error)) {
+							throw error;
+						}
+						return null;
+					})
 			)
 		);
 
@@ -195,29 +217,36 @@
 
 	async function refreshBoothsAndProducts() {
 		menuError = '';
-		const boothList = await api.listBooths();
-		booths = boothList;
+		try {
+			const boothList = await api.listBooths();
+			booths = boothList;
 
-		const aggregated = [];
-		const boothErrors = [];
+			const aggregated = [];
+			const boothErrors = [];
 
-		for (const booth of boothList) {
-			try {
-				const boothProducts = await api.listProductsByBooth(booth.id);
-				const normalized = (boothProducts || []).map((product) => ({
-					...product,
-					boothId: booth.id
-				}));
-				aggregated.push(...normalized);
-			} catch (error) {
-				boothErrors.push(`${booth.name || `부스 ${booth.id}`}: ${error.message}`);
+			for (const booth of boothList) {
+				try {
+					const boothProducts = await api.listProductsByBooth(booth.id);
+					const normalized = (boothProducts || []).map((product) => ({
+						...product,
+						boothId: booth.id
+					}));
+					aggregated.push(...normalized);
+				} catch (error) {
+					boothErrors.push(`${booth.name || `부스 ${booth.id}`}: ${error.message}`);
+				}
 			}
-		}
 
-		products = aggregated;
+			products = aggregated;
 
-		if (boothErrors.length) {
-			menuError = `일부 메뉴를 불러오지 못했습니다. (${boothErrors.join(', ')})`;
+			if (boothErrors.length) {
+				menuError = `일부 메뉴를 불러오지 못했습니다. (${boothErrors.join(', ')})`;
+			}
+		} catch (error) {
+			if (handleAuthError(error)) {
+				return;
+			}
+			menuError = error.message || '메뉴 정보를 불러오지 못했습니다.';
 		}
 	}
 
@@ -255,6 +284,9 @@
 				adminChargeRequests = [];
 			}
 		} catch (error) {
+			if (handleAuthError(error)) {
+				return;
+			}
 			globalError = error.message || '데이터를 불러오지 못했습니다.';
 		} finally {
 			saveSession();
@@ -278,6 +310,9 @@
 			}
 			saveSession();
 		} catch (error) {
+			if (handleAuthError(error)) {
+				return;
+			}
 			globalError = error.message || '사용자 정보를 불러오지 못했습니다.';
 		}
 	}
@@ -293,6 +328,9 @@
 			const list = await api.listTransactions();
 			transactions = Array.isArray(list) ? list : [];
 		} catch (error) {
+			if (handleAuthError(error)) {
+				return;
+			}
 			globalError = error.message || '거래 내역을 불러오지 못했습니다.';
 		} finally {
 			historyLoading = false;
@@ -357,6 +395,9 @@
 			userChargeRequests = [response, ...userChargeRequests];
 			addChargeId(response.id);
 		} catch (error) {
+			if (handleAuthError(error)) {
+				return;
+			}
 			chargeError = error.message || '충전 요청에 실패했습니다.';
 		} finally {
 			chargePending = false;
@@ -372,6 +413,9 @@
 			adminChargeRequests = adminChargeRequests.filter((request) => request.id !== id);
 			await Promise.all([refreshUserProfile(), loadUserChargeRequests(), refreshAdminCharges()]);
 		} catch (error) {
+			if (handleAuthError(error)) {
+				return;
+			}
 			globalError = error.message || '충전 승인 중 오류가 발생했습니다.';
 		} finally {
 			adminActionPendingId = null;
@@ -387,6 +431,9 @@
 			adminChargeRequests = adminChargeRequests.filter((request) => request.id !== id);
 			await refreshAdminCharges();
 		} catch (error) {
+			if (handleAuthError(error)) {
+				return;
+			}
 			globalError = error.message || '충전 거절 중 오류가 발생했습니다.';
 		} finally {
 			adminActionPendingId = null;
@@ -406,6 +453,9 @@
 			});
 			await refreshBoothsAndProducts();
 		} catch (error) {
+			if (handleAuthError(error)) {
+				return;
+			}
 			globalError = error.message || '부스를 생성하지 못했습니다.';
 		}
 	}
@@ -428,6 +478,9 @@
 			await api.updateBooth(id, payload);
 			await refreshBoothsAndProducts();
 		} catch (error) {
+			if (handleAuthError(error)) {
+				return;
+			}
 			globalError = error.message || '부스를 수정하지 못했습니다.';
 		}
 	}
@@ -440,6 +493,9 @@
 			await api.deleteBooth(id);
 			await refreshBoothsAndProducts();
 		} catch (error) {
+			if (handleAuthError(error)) {
+				return;
+			}
 			globalError = error.message || '부스를 삭제하지 못했습니다.';
 		}
 	}
@@ -459,6 +515,9 @@
 			});
 			await refreshBoothsAndProducts();
 		} catch (error) {
+			if (handleAuthError(error)) {
+				return;
+			}
 			globalError = error.message || '상품을 생성하지 못했습니다.';
 		}
 	}
@@ -487,6 +546,9 @@
 			await api.updateProduct(id, payload);
 			await refreshBoothsAndProducts();
 		} catch (error) {
+			if (handleAuthError(error)) {
+				return;
+			}
 			globalError = error.message || '상품을 수정하지 못했습니다.';
 		}
 	}
@@ -499,6 +561,9 @@
 			await api.deleteProduct(id);
 			await refreshBoothsAndProducts();
 		} catch (error) {
+			if (handleAuthError(error)) {
+				return;
+			}
 			globalError = error.message || '상품을 삭제하지 못했습니다.';
 		}
 	}
@@ -526,15 +591,49 @@
 				refreshTransactions(),
 				loadUserChargeRequests(),
 				refreshBoothsAndProducts().catch((error) => {
-					menuError = error.message || '메뉴 정보를 불러오지 못했습니다.';
+					if (!handleAuthError(error)) {
+						menuError = error.message || '메뉴 정보를 불러오지 못했습니다.';
+					}
 				})
 			]);
 
 			currentScreen = 'home';
 		} catch (error) {
+			if (handleAuthError(error)) {
+				return;
+			}
 			paymentError = error.message || '결제에 실패했습니다.';
 		} finally {
 			paymentProcessing = false;
+		}
+	}
+
+	async function handleUpdateCredentials(event) {
+		const { password, pin } = event.detail || {};
+		if (!session.userId) {
+			globalError = '사용자 정보를 확인할 수 없습니다.';
+			return;
+		}
+		const payload = {};
+		if (password && password.trim()) {
+			payload.password = password.trim();
+		}
+		if (pin && pin.trim()) {
+			payload.pin = pin.trim();
+		}
+		if (!Object.keys(payload).length) {
+			return;
+		}
+
+		try {
+			await api.updateUser(session.userId, payload);
+			await refreshUserProfile();
+			globalError = '비밀번호/PIN이 변경되었습니다.';
+		} catch (error) {
+			if (handleAuthError(error)) {
+				return;
+			}
+			globalError = error.message || '비밀번호/PIN 변경에 실패했습니다.';
 		}
 	}
 
@@ -616,6 +715,7 @@
 					on:createProduct={handleCreateProduct}
 					on:updateProduct={handleUpdateProduct}
 					on:deleteProduct={handleDeleteProduct}
+					on:updateCredentials={handleUpdateCredentials}
 				/>
 			{:else if currentScreen === 'payment'}
 				<PaymentScreen

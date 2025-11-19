@@ -70,14 +70,14 @@
 									on:click={() => handleAddItem(menu)}
 									class="flex-1 rounded-xl bg-cyan-600 py-2 text-sm font-semibold text-white transition hover:bg-cyan-700"
 								>
-									추가
+									메뉴 추가
 								</button>
 							{:else}
 								<button
 									on:click={() => handleUpdate(menu.id, quantityByProduct[menu.id] - 1)}
 									class="flex h-10 w-10 items-center justify-center text-xl font-bold text-cyan-700"
 								>
-									–
+									−
 								</button>
 								<span class="flex-1 text-center text-lg font-bold text-cyan-900">
 									{quantityByProduct[menu.id]}
@@ -110,7 +110,6 @@
 <style>
 	button {
 		border: none;
-		background: none;
 		cursor: pointer;
 	}
 

@@ -109,6 +109,9 @@ export async function apiRequest(path, options = {}) {
 
 	const parsed = await parseResponseBody(response);
 	if (!response.ok) {
+		if (response.status === 401 && auth) {
+			clearStoredToken();
+		}
 		const message =
 			(parsed && (parsed.message || parsed.error || parsed.details)) ||
 			(typeof parsed === 'string' && parsed) ||
@@ -116,6 +119,9 @@ export async function apiRequest(path, options = {}) {
 
 		const requestError = new Error(message);
 		requestError.status = response.status;
+		if (response.status === 401) {
+			requestError.code = 'TOKEN_EXPIRED';
+		}
 		requestError.payload = parsed;
 		throw requestError;
 	}

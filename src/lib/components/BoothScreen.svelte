@@ -45,7 +45,6 @@
 <style>
 	button {
 		border: none;
-		background: none;
 		cursor: pointer;
 	}
 </style>
