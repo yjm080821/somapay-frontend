@@ -3,6 +3,14 @@
 	import HomeScreen from '$lib/components/screens/HomeScreen.svelte';
 	import PaymentScreen from '$lib/components/screens/PaymentScreen.svelte';
 	import HistoryScreen from '$lib/components/screens/HistoryScreen.svelte';
+	import ChargeScreen from '$lib/components/screens/ChargeScreen.svelte';
+	import ChargeRequestsScreen from '$lib/components/screens/ChargeRequestsScreen.svelte';
+	import SpendingScreen from '$lib/components/screens/SpendingScreen.svelte';
+	import IncomeScreen from '$lib/components/screens/IncomeScreen.svelte';
+	import AdminChargeScreen from '$lib/components/screens/AdminChargeScreen.svelte';
+	import BoothManagementScreen from '$lib/components/screens/BoothManagementScreen.svelte';
+	import ProductManagementScreen from '$lib/components/screens/ProductManagementScreen.svelte';
+	import CredentialsScreen from '$lib/components/screens/CredentialsScreen.svelte';
 	import Navigation from '$lib/components/Navigation.svelte';
 	import LoginScreen from '$lib/components/screens/LoginScreen.svelte';
 	import * as api from '$lib/api';
@@ -40,6 +48,9 @@
 	let paymentResetKey = 0;
 
 	let historyLoading = false;
+	let credentialsPending = false;
+	let credentialFeedback = '';
+	let boothOwnerMap = new Map();
 
 	const normalizeStatus = (status) => (status || '').toUpperCase();
 	const filterPending = (requests) =>
@@ -83,6 +94,58 @@
 		}
 	}
 
+	function getTxTimestamp(tx) {
+		return (
+			tx?.timestamp ||
+			tx?.createdAt ||
+			tx?.updatedAt ||
+			tx?.created_at ||
+			tx?.updated_at ||
+			null
+		);
+	}
+
+	function getTxUserId(tx) {
+		const candidate =
+			tx?.userId ??
+			tx?.user_id ??
+			tx?.userID ??
+			tx?.user?.id ??
+			tx?.edges?.user?.id ??
+			null;
+		return candidate === null || candidate === undefined ? null : Number(candidate);
+	}
+
+	function getTxBoothId(tx) {
+		const candidate =
+			tx?.boothId ??
+			tx?.booth_id ??
+			tx?.boothID ??
+			tx?.booth?.id ??
+			tx?.edges?.booth?.id ??
+			null;
+		return candidate === null || candidate === undefined ? null : Number(candidate);
+	}
+
+	function getBoothOwnerIdFromTx(tx) {
+		const direct =
+			tx?.boothOwnerId ??
+			tx?.booth_owner_id ??
+			tx?.booth?.userId ??
+			tx?.booth?.user_id ??
+			tx?.booth?.user?.id ??
+			tx?.edges?.booth?.user?.id ??
+			tx?.edges?.booth?.edges?.user?.id ??
+			null;
+		if (direct !== null && direct !== undefined) {
+			return Number(direct);
+		}
+		const boothId = getTxBoothId(tx);
+		if (!boothId) return null;
+		const mapped = boothOwnerMap.get(boothId);
+		return mapped === undefined ? null : Number(mapped);
+	}
+
 	$: loggedIn = Boolean(session.token);
 
 	function currentRole() {
@@ -97,6 +160,51 @@
 	$: normalizedRole = (roleLabel || '').toUpperCase();
 	$: isAdminRole = normalizedRole === 'ADMIN';
 	$: isHostRole = normalizedRole === 'HOST';
+	$: boothOwnerMap = new Map(
+		(booths || [])
+			.map((booth) => {
+				const boothId = booth?.id ?? booth?.boothId ?? booth?.booth_id;
+				if (boothId === undefined || boothId === null) {
+					return null;
+				}
+				const owner =
+					booth?.userId ??
+					booth?.user_id ??
+					booth?.user?.id ??
+					booth?.edges?.user?.id ??
+					null;
+				const normalizedOwner =
+					owner === undefined || owner === null ? null : Number(owner);
+				return [Number(boothId), normalizedOwner];
+			})
+			.filter(Boolean)
+	);
+	$: sortedTransactions = Array.isArray(transactions)
+		? [...transactions].sort((a, b) => {
+				const left = new Date(getTxTimestamp(b) || 0).getTime();
+				const right = new Date(getTxTimestamp(a) || 0).getTime();
+				return left - right;
+		  })
+		: [];
+	$: spendingTransactions = sortedTransactions.filter((tx) => {
+		if (!session.userId) return false;
+		const buyerId = getTxUserId(tx);
+		return buyerId !== null && buyerId === Number(session.userId);
+	});
+	$: hostTransactions = sortedTransactions.filter((tx) => {
+		if (!isHostRole && !isAdminRole) {
+			return false;
+		}
+		if (isAdminRole) {
+			return true;
+		}
+		if (!session.userId) {
+			return false;
+		}
+		const ownerId = getBoothOwnerIdFromTx(tx);
+		return ownerId !== null && ownerId === Number(session.userId);
+	});
+	$: incomeTotal = hostTransactions.reduce((sum, tx) => sum + Number(tx?.amount ?? 0), 0);
 
 	function saveSession() {
 		if (!isBrowser()) return;
@@ -141,6 +249,9 @@
 		paymentError = '';
 		paymentResetKey = 0;
 		historyLoading = false;
+		credentialsPending = false;
+		credentialFeedback = '';
+		boothOwnerMap = new Map();
 		currentScreen = 'home';
 		globalError = '';
 		api.clearStoredToken();
@@ -625,15 +736,21 @@
 			return;
 		}
 
+		globalError = '';
+		credentialFeedback = '';
+		credentialsPending = true;
+
 		try {
 			await api.updateUser(session.userId, payload);
 			await refreshUserProfile();
-			globalError = '비밀번호/PIN이 변경되었습니다.';
+			credentialFeedback = '비밀번호/PIN이 변경되었습니다.';
 		} catch (error) {
 			if (handleAuthError(error)) {
 				return;
 			}
 			globalError = error.message || '비밀번호/PIN 변경에 실패했습니다.';
+		} finally {
+			credentialsPending = false;
 		}
 	}
 
@@ -693,28 +810,65 @@
 			{#if currentScreen === 'home'}
 				<HomeScreen
 					user={userProfile}
-					{transactions}
-					charges={userChargeRequests}
-					chargeRequests={adminChargeRequests}
 					role={roleLabel}
-					{booths}
-					{products}
 					isAdmin={isAdminRole}
 					isHost={isHostRole}
-					{chargePending}
-					{chargeError}
-					{adminActionPendingId}
+					on:navigate={handleNav}
+					on:logout={handleLogout}
+				/>
+			{:else if currentScreen === 'charge'}
+				<ChargeScreen
+					pending={chargePending}
+					error={chargeError}
 					on:navigate={handleNav}
 					on:requestCharge={handleChargeRequest}
+				/>
+			{:else if currentScreen === 'charge-requests'}
+				<ChargeRequestsScreen
+					requests={userChargeRequests}
+					on:navigate={handleNav}
+				/>
+			{:else if currentScreen === 'spending'}
+				<SpendingScreen transactions={spendingTransactions} on:navigate={handleNav} />
+			{:else if currentScreen === 'income'}
+				<IncomeScreen
+					transactions={hostTransactions}
+					total={incomeTotal}
+					on:navigate={handleNav}
+				/>
+			{:else if currentScreen === 'admin-charges'}
+				<AdminChargeScreen
+					requests={adminChargeRequests}
+					pendingId={adminActionPendingId}
+					on:navigate={handleNav}
 					on:approveCharge={handleApproveCharge}
 					on:rejectCharge={handleRejectCharge}
-					on:logout={handleLogout}
+				/>
+			{:else if currentScreen === 'booth-management'}
+				<BoothManagementScreen
+					booths={booths}
+					on:navigate={handleNav}
 					on:createBooth={handleCreateBooth}
 					on:updateBooth={handleUpdateBooth}
 					on:deleteBooth={handleDeleteBooth}
+				/>
+			{:else if currentScreen === 'product-management'}
+				<ProductManagementScreen
+					{booths}
+					{products}
+					user={userProfile}
+					isAdmin={isAdminRole}
+					isHost={isHostRole}
+					on:navigate={handleNav}
 					on:createProduct={handleCreateProduct}
 					on:updateProduct={handleUpdateProduct}
 					on:deleteProduct={handleDeleteProduct}
+				/>
+			{:else if currentScreen === 'credentials'}
+				<CredentialsScreen
+					pending={credentialsPending}
+					message={credentialFeedback}
+					on:navigate={handleNav}
 					on:updateCredentials={handleUpdateCredentials}
 				/>
 			{:else if currentScreen === 'payment'}

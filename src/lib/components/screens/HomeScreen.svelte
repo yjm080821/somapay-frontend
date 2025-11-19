@@ -1,776 +1,166 @@
 <script>
 	import { createEventDispatcher } from 'svelte';
-	import { formatCurrency, formatDateTime, toArray } from '$lib/utils/format';
+	import { formatCurrency } from '$lib/utils/format';
 
 	export let user = null;
-	export let transactions = [];
-	export let charges = [];
-	export let chargeRequests = [];
-	export let booths = [];
-	export let products = [];
+	export let role = 'USER';
 	export let isAdmin = false;
 	export let isHost = false;
-	export let role = 'USER';
-	export let chargePending = false;
-	export let chargeError = '';
-	export let adminActionPendingId = null;
 
 	const dispatch = createEventDispatcher();
-	const getUid = () => globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
 
-	let chargeAmount = '';
-	let localError = '';
-	let newBoothForm = { name: '', userId: '' };
-	let editingBoothId = null;
-	let editingBoothForm = { name: '', userId: '' };
-	let manageBoothId = '';
-	let managedProducts = [];
-	let managedBoothIds = new Set();
-	let newProductForm = { name: '', description: '', price: '' };
-	let editingProductId = null;
-	let editingProductForm = { name: '', description: '', price: '' };
-	let credentialForm = { password: '', pin: '' };
-	let activePanel = '';
-
-	const actionButtons = [
-		{ id: 'payment', label: '결제하기', icon: '💳' },
-		{ id: 'charge', label: '충전', icon: '⚡️' },
-		{ id: 'spending', label: '지출내역', icon: '💸' },
-		{ id: 'income', label: '수익내역', icon: '💰' },
-		{ id: 'requests', label: '충전요청', icon: '📨' },
-		{ id: 'approvals', label: '충전승인', icon: '🧾', adminOnly: true },
-		{ id: 'booths', label: '부스관리', icon: '🏢', adminOnly: true },
-		{ id: 'products', label: '상품관리', icon: '🛠', hostOnly: true }
+	const ACTIONS = [
+		{
+			id: 'payment',
+			label: '결제하기',
+			description: '부스 선택 후 결제',
+			emoji: '💳',
+			roles: ['USER', 'HOST', 'ADMIN']
+		},
+		{
+			id: 'charge',
+			label: '충전하기',
+			description: '포인트 충전 요청',
+			emoji: '⚡',
+			roles: ['USER', 'HOST', 'ADMIN']
+		},
+		{
+			id: 'charge-requests',
+			label: '요청내역',
+			description: '충전 요청 상태 확인',
+			emoji: '📋',
+			roles: ['USER', 'HOST', 'ADMIN']
+		},
+		{
+			id: 'spending',
+			label: '지출내역',
+			description: '나의 사용 기록',
+			emoji: '🧾',
+			roles: ['USER', 'HOST', 'ADMIN']
+		},
+		{
+			id: 'income',
+			label: '수익내역',
+			description: '부스 매출 확인',
+			emoji: '📈',
+			roles: ['HOST', 'ADMIN']
+		},
+		{
+			id: 'admin-charges',
+			label: '충전승인',
+			description: '요청 승인/거절',
+			emoji: '✅',
+			roles: ['ADMIN']
+		},
+		{
+			id: 'booth-management',
+			label: '부스관리',
+			description: '부스 생성/수정',
+			emoji: '🏠',
+			roles: ['ADMIN']
+		},
+		{
+			id: 'product-management',
+			label: '상품관리',
+			description: '메뉴 구성',
+			emoji: '🍱',
+			roles: ['HOST', 'ADMIN']
+		},
+		{
+			id: 'credentials',
+			label: '보안설정',
+			description: '비밀번호/PIN',
+			emoji: '🔐',
+			roles: ['USER', 'HOST', 'ADMIN']
+		}
 	];
 
-	let canManageProducts = false;
-
-	$: canManageProducts = isAdmin || isHost;
-
-	$: managedBoothIds = new Set(
-		Array.isArray(booths)
-			? booths
-					.filter((booth) =>
-						isAdmin ? true : isHost && (booth.userId === user?.id || booth.user_id === user?.id)
-					)
-					.map((booth) => booth.id)
-			: []
-	);
-
-	$: {
-		if (canManageProducts) {
-			if (!manageBoothId && booths?.length) {
-				manageBoothId = String(booths[0].id);
-			} else if (!booths?.length) {
-				manageBoothId = '';
-			}
-		} else {
-			manageBoothId = '';
-		}
-	}
-
-	$: managedProducts =
-		canManageProducts && manageBoothId
-			? products.filter(
-					(product) => String(product.boothId ?? product.booth_id ?? '') === manageBoothId
-				)
-			: [];
-
-	function goTo(screen) {
-		dispatch('navigate', screen);
-	}
-
-	function submitCharge() {
-		localError = '';
-
-		const numericAmount = Number(String(chargeAmount).replace(/[^0-9]/g, ''));
-		if (!numericAmount || numericAmount < 1000) {
-			localError = '1,000원 이상 입력해주세요.';
-			return;
-		}
-
-		dispatch('requestCharge', numericAmount);
-		chargeAmount = '';
-	}
-
-	function handleApprove(id) {
-		dispatch('approveCharge', id);
-	}
-
-	function handleReject(id) {
-		dispatch('rejectCharge', id);
-	}
+	$: normalizedRole = (role || '').toUpperCase() || 'USER';
 
 	function logout() {
 		dispatch('logout');
 	}
 
-	function submitNewBooth() {
-		const name = newBoothForm.name.trim();
-		const userId = newBoothForm.userId.trim();
-		if (!name || !userId) return;
-		dispatch('createBooth', { name, userId });
-		newBoothForm = { name: '', userId: '' };
+	function navigate(target) {
+		dispatch('navigate', target);
 	}
 
-	function startEditBooth(booth) {
-		editingBoothId = booth.id;
-		editingBoothForm = { name: booth.name ?? '', userId: '' };
-	}
-
-	function cancelEditBooth() {
-		editingBoothId = null;
-		editingBoothForm = { name: '', userId: '' };
-	}
-
-	function submitBoothUpdate() {
-		if (!editingBoothId) return;
-		const name = editingBoothForm.name.trim();
-		const userId = editingBoothForm.userId.trim();
-		if (!name && !userId) {
-			cancelEditBooth();
-			return;
+	function canSee(action) {
+		if (!action?.roles?.length) {
+			return true;
 		}
-		dispatch('updateBooth', { id: editingBoothId, name, userId });
-		cancelEditBooth();
-	}
-
-	function deleteBooth(id) {
-		dispatch('deleteBooth', { id });
-	}
-
-	function submitNewProduct() {
-		if (!manageBoothId) return;
-		const boothId = Number(manageBoothId);
-		const name = newProductForm.name.trim();
-		const description = newProductForm.description.trim();
-		const price = newProductForm.price;
-		if (!name || price === '') return;
-		dispatch('createProduct', {
-			boothId,
-			name,
-			description,
-			price
+		return action.roles.some((code) => {
+			if (code === 'ALL') return true;
+			if (code === 'ADMIN') return isAdmin;
+			if (code === 'HOST') return isHost;
+			if (code === 'USER') return true;
+			return normalizedRole === code;
 		});
-		newProductForm = { name: '', description: '', price: '' };
 	}
 
-	function startEditProduct(product) {
-		editingProductId = product.id;
-		editingProductForm = {
-			name: product.name ?? '',
-			description: product.description ?? '',
-			price: product.price ?? ''
-		};
-	}
-
-	function cancelEditProduct() {
-		editingProductId = null;
-		editingProductForm = { name: '', description: '', price: '' };
-	}
-
-	function submitProductUpdate() {
-		if (!editingProductId) return;
-		dispatch('updateProduct', {
-			id: editingProductId,
-			name: editingProductForm.name,
-			description: editingProductForm.description,
-			price: editingProductForm.price
-		});
-		cancelEditProduct();
-	}
-
-	function deleteProduct(id) {
-		dispatch('deleteProduct', { id });
-	}
-
-	function submitCredentials() {
-		const password = credentialForm.password.trim();
-		const pin = credentialForm.pin.trim();
-		if (!password && !pin) {
-			return;
-		}
-		dispatch('updateCredentials', { password, pin });
-		credentialForm = { password: '', pin: '' };
-	}
-
-	function handleAction(id) {
-		switch (id) {
-			case 'payment':
-				goTo('payment');
-				break;
-			case 'charge':
-				activePanel = 'charge';
-				break;
-			case 'spending':
-				activePanel = 'spending';
-				break;
-			case 'income':
-				activePanel = 'income';
-				break;
-			case 'requests':
-				activePanel = 'requests';
-				break;
-			case 'approvals':
-				activePanel = 'approvals';
-				break;
-			case 'booths':
-				activePanel = 'booths';
-				break;
-			case 'products':
-				activePanel = 'products';
-				break;
-		}
-	}
-
-	function showAction(action) {
-		if (action.adminOnly) return isAdmin;
-		if (action.hostOnly) return canManageProducts;
-		return true;
-	}
-
-	$: baseTransactions = toArray(transactions)
-		.map((tx) => {
-			const boothId = tx.boothId ?? tx.booth_id ?? tx.edges?.booth?.id;
-			const boothName =
-				tx.boothName || tx.edges?.booth?.name || (boothId ? `부스 ${boothId}` : '부스 정보 없음');
-			const buyerId = tx.userId ?? tx.user_id ?? tx.edges?.user?.id;
-			const buyerName =
-				tx.edges?.user?.username || (buyerId ? `사용자 ${buyerId}` : '알 수 없는 사용자');
-			const amount = Math.abs(Number(tx.amount ?? 0));
-			const timestampValue = new Date(tx.timestamp || tx.createdAt || tx.updatedAt).getTime() || 0;
-			const timeLabel = formatDateTime(tx.timestamp || tx.createdAt || tx.updatedAt);
-			const manages = managedBoothIds.has(boothId);
-			const isBuyer = user?.id && buyerId === user.id;
-			return {
-				id: tx.id ?? getUid(),
-				boothId,
-				boothName,
-				buyerName,
-				amount,
-				timestamp: timestampValue,
-				timeLabel,
-				manages,
-				isBuyer
-			};
-		})
-		.sort((a, b) => b.timestamp - a.timestamp);
-
-	$: spendingTransactions = baseTransactions.filter((tx) => tx.isBuyer && !tx.manages);
-	$: incomeTransactions = baseTransactions.filter((tx) => tx.manages);
-	$: totalIncome = incomeTransactions.reduce((sum, tx) => sum + tx.amount, 0);
-
-	$: normalizedCharges = toArray(charges).map((charge) => ({
-		id: charge.id ?? getUid(),
-		amount: charge.amount ?? 0,
-		status: charge.status ?? 'UNKNOWN',
-		date: formatDateTime(charge.timestamp || charge.updatedAt || charge.createdAt),
-		userId: charge.userId ?? charge.edges?.user?.id
-	}));
-
-	$: adminCharges = toArray(chargeRequests).map((request) => ({
-		...request,
-		userLabel: request.userId || request.edges?.user?.username || request.edges?.user?.id || '-'
-	}));
+	$: availableActions = ACTIONS.filter((action) => canSee(action));
 </script>
 
-<div class="space-y-6 bg-gray-50 p-6">
-	<div class="flex flex-wrap items-center justify-between gap-3">
-		<div>
-			<p class="text-sm text-gray-500">안녕하세요,</p>
-			<h1 class="text-2xl font-bold text-gray-900">
-				{user?.username ? `${user.username}님` : '사용자님'}
-			</h1>
-			<p
-				class="mt-1 inline-flex rounded-full bg-gray-200 px-3 py-1 text-xs font-semibold text-gray-600"
-			>
-				{role}
-			</p>
+<div class="flex h-full flex-col gap-4 bg-gray-50 p-4">
+	<section class="rounded-3xl bg-white p-5 shadow">
+		<p class="text-sm text-gray-500">보유 포인트</p>
+		<p class="mt-2 text-4xl font-bold text-cyan-600">
+			{formatCurrency(user?.point ?? user?.points ?? 0)}
+		</p>
+		<div class="mt-4 grid gap-2 text-sm text-gray-600">
+			<div class="flex items-center justify-between">
+				<span class="font-semibold text-gray-800">사용자</span>
+				<span>{user?.username ?? '-'}</span>
+			</div>
+			<div class="flex items-center justify-between">
+				<span class="font-semibold text-gray-800">권한</span>
+				<span>{normalizedRole}</span>
+			</div>
 		</div>
-		<div class="flex gap-2">
-			<button
-				on:click={() => {
-					activePanel = 'credentials';
-				}}
-				class="rounded-full border border-gray-300 px-4 py-2 text-xs font-semibold text-gray-600 transition hover:bg-gray-100 active:scale-95"
-			>
-				비밀번호 / PIN 변경
-			</button>
+		<div class="mt-6 flex gap-3">
 			<button
 				on:click={logout}
-				class="rounded-full border border-gray-300 px-4 py-2 text-xs font-semibold text-gray-600 transition hover:bg-gray-100 active:scale-95"
+				class="flex-1 rounded-2xl border border-gray-200 py-3 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
 			>
 				로그아웃
 			</button>
+			<button
+				on:click={() => navigate('credentials')}
+				class="flex-1 rounded-2xl border border-cyan-100 bg-cyan-50 py-3 text-sm font-semibold text-cyan-700 transition hover:bg-cyan-100"
+			>
+				보안설정
+			</button>
 		</div>
-	</div>
+	</section>
 
-	<div class="rounded-2xl bg-cyan-600 p-6 text-white shadow-lg">
-		<p class="text-sm opacity-90">보유 포인트</p>
-		<p class="mt-2 text-4xl font-bold">{formatCurrency(user?.point ?? 0)}</p>
-	</div>
-
-	<div class="grid grid-cols-2 gap-3 md:grid-cols-4">
-		{#each actionButtons as action (action.id)}
-			{#if showAction(action)}
-				<button class="quick-btn" on:click={() => handleAction(action.id)}>
-					<span class="text-2xl">{action.icon}</span>
-					<span>{action.label}</span>
-				</button>
-			{/if}
-		{/each}
-	</div>
-
-	{#if !activePanel}
-		<p class="rounded-xl bg-white p-4 text-center text-sm text-gray-500 shadow">
-			원하는 기능 버튼을 눌러 상세 화면을 열어주세요.
-		</p>
-	{:else if activePanel === 'charge'}
-		<div class="rounded-2xl bg-white p-5 shadow">
-			<div class="mb-4">
-				<h2 class="text-base font-semibold text-gray-900">포인트 충전</h2>
-				<p class="text-xs text-gray-500">
-					충전 요청은 관리자 승인 후 적용됩니다. 1002-2531-2071 토스뱅크 양지민
-				</p>
-			</div>
-			<div class="space-y-3">
-				<input
-					type="text"
-					inputmode="numeric"
-					placeholder="충전할 금액 (최소 1,000원)"
-					bind:value={chargeAmount}
-					class="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 focus:outline-none"
-					disabled={chargePending}
-				/>
-				<div class="flex gap-3">
-					{#each [10000, 20000, 50000] as preset (preset)}
-						<button
-							class="flex-1 rounded-xl border border-cyan-200 px-3 py-2 text-sm font-semibold text-cyan-700 transition hover:bg-cyan-50"
-							type="button"
-							disabled={chargePending}
-							on:click={() => {
-								chargeAmount = preset.toString();
-							}}
-						>
-							{formatCurrency(preset)}
-						</button>
-					{/each}
-				</div>
-				{#if localError}
-					<p class="text-xs text-red-500">{localError}</p>
-				{:else if chargeError}
-					<p class="text-xs text-red-500">{chargeError}</p>
-				{/if}
-				<button
-					class="w-full rounded-xl bg-cyan-600 py-3 text-sm font-bold text-white transition hover:bg-cyan-700 disabled:cursor-not-allowed disabled:bg-cyan-200"
-					on:click={submitCharge}
-					disabled={chargePending}
-				>
-					{chargePending ? '요청 중...' : '충전 요청'}
-				</button>
-			</div>
-		</div>
-	{:else if activePanel === 'spending'}
-		<div class="space-y-3 rounded-2xl bg-white p-5 shadow">
-			<h2 class="text-base font-semibold text-gray-900">지출 내역</h2>
-			{#if spendingTransactions.length === 0}
-				<p class="text-sm text-gray-500">지출 내역이 없습니다.</p>
-			{:else}
-				{#each spendingTransactions as tx (tx.id)}
-					<div
-						class="flex items-center justify-between rounded-xl border border-gray-100 px-4 py-3"
-					>
-						<div>
-							<p class="text-sm font-semibold text-gray-900">{tx.boothName}</p>
-							<p class="text-xs text-gray-500">{tx.timeLabel}</p>
-						</div>
-						<p class="text-sm font-bold text-red-500">-{formatCurrency(tx.amount)}</p>
-					</div>
-				{/each}
-			{/if}
-		</div>
-	{:else if activePanel === 'income'}
-		<div class="space-y-3 rounded-2xl bg-white p-5 shadow">
-			<div class="flex items-center justify-between">
-				<h2 class="text-base font-semibold text-gray-900">수익 내역</h2>
-				<p class="text-sm font-semibold text-cyan-700">총 수익 {formatCurrency(totalIncome)}</p>
-			</div>
-			{#if incomeTransactions.length === 0}
-				<p class="text-sm text-gray-500">
-					표시할 수익 내역이 없습니다. (부스 관리자만 확인할 수 있습니다.)
-				</p>
-			{:else}
-				{#each incomeTransactions as tx (tx.id)}
-					<div
-						class="flex items-center justify-between rounded-xl border border-gray-100 px-4 py-3"
-					>
-						<div>
-							<p class="text-sm font-semibold text-gray-900">{tx.boothName}</p>
-							<p class="text-xs text-gray-500">
-								{tx.timeLabel} · 구매자 {tx.buyerName}
-							</p>
-						</div>
-						<p class="text-sm font-bold text-green-600">+{formatCurrency(tx.amount)}</p>
-					</div>
-				{/each}
-			{/if}
-		</div>
-	{:else if activePanel === 'requests'}
-		<div class="space-y-3 rounded-2xl bg-white p-5 shadow">
-			<h2 class="text-base font-semibold text-gray-900">충전 요청 내역</h2>
-			{#if normalizedCharges.length === 0}
-				<p class="text-sm text-gray-500">충전 요청 기록이 없습니다.</p>
-			{:else}
-				{#each normalizedCharges as charge (charge.id)}
-					<div
-						class="flex items-center justify-between rounded-xl border border-gray-100 px-4 py-3"
-					>
-						<div>
-							<p class="text-sm font-semibold text-gray-900">{formatCurrency(charge.amount)}</p>
-							<p class="text-xs text-gray-500">{charge.date || '-'}</p>
-						</div>
-						<span
-							class={`rounded-full px-3 py-1 text-xs font-semibold ${
-								charge.status === 'APPROVED'
-									? 'bg-green-100 text-green-700'
-									: charge.status === 'REJECTED'
-										? 'bg-red-100 text-red-600'
-										: 'bg-yellow-100 text-yellow-600'
-							}`}
-						>
-							{charge.status}
-						</span>
-					</div>
-				{/each}
-			{/if}
-		</div>
-	{:else if activePanel === 'approvals'}
-		{#if adminCharges.length === 0}
-			<div class="rounded-2xl bg-white p-5 text-sm text-gray-500 shadow">
-				승인 대기 중인 요청이 없습니다.
-			</div>
-		{:else}
-			<div class="space-y-3 rounded-2xl bg-white p-5 shadow">
-				<h2 class="text-base font-semibold text-gray-900">승인 대기 중인 충전 요청</h2>
-				{#each adminCharges as request (request.id)}
-					<div class="rounded-xl border border-gray-100 p-4">
-						<div class="flex items-center justify-between">
-							<div>
-								<p class="text-sm font-semibold text-gray-900">
-									사용자 {request.userLabel ?? '-'}
-								</p>
-								<p class="text-xs text-gray-500">
-									{formatDateTime(request.createdAt || request.updatedAt)}
-								</p>
-							</div>
-							<p class="text-base font-bold text-gray-900">{formatCurrency(request.amount)}</p>
-						</div>
-						<div class="mt-3 flex gap-2">
-							<button
-								class="flex-1 rounded-xl border border-gray-200 py-2 text-sm font-semibold text-gray-600 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-70"
-								on:click={() => handleReject(request.id)}
-								disabled={adminActionPendingId === request.id}
-							>
-								거절
-							</button>
-							<button
-								class="flex-1 rounded-xl bg-cyan-600 py-2 text-sm font-semibold text-white transition hover:bg-cyan-700 disabled:cursor-not-allowed disabled:bg-cyan-200"
-								on:click={() => handleApprove(request.id)}
-								disabled={adminActionPendingId === request.id}
-							>
-								승인
-							</button>
-						</div>
-					</div>
-				{/each}
-			</div>
-		{/if}
-	{:else if activePanel === 'booths'}
-		{#if !isAdmin}
-			<p class="rounded-2xl bg-white p-5 text-sm text-red-500 shadow">관리자 전용 기능입니다.</p>
-		{:else}
-			<div class="space-y-4 rounded-2xl bg-white p-5 shadow">
-				<div class="flex items-center justify-between">
-					<h2 class="text-base font-semibold text-gray-900">부스 관리</h2>
-					<p class="text-xs text-gray-500">호스트 사용자 ID를 정확히 입력해주세요.</p>
-				</div>
-				<form class="grid gap-2 md:grid-cols-3" on:submit|preventDefault={submitNewBooth}>
-					<input
-						class="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 focus:outline-none"
-						placeholder="부스 이름"
-						bind:value={newBoothForm.name}
-					/>
-					<input
-						class="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 focus:outline-none"
-						placeholder="호스트 사용자 ID"
-						bind:value={newBoothForm.userId}
-					/>
-					<button
-						type="submit"
-						class="rounded-lg bg-cyan-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-cyan-700"
-					>
-						부스 생성
-					</button>
-				</form>
-				<div class="space-y-3">
-					{#if booths.length === 0}
-						<p class="text-sm text-gray-500">등록된 부스가 없습니다.</p>
-					{:else}
-						{#each booths as booth (booth.id)}
-							<div class="rounded-xl border border-gray-100 p-4">
-								<div class="flex flex-wrap items-center justify-between gap-3">
-									<div>
-										<p class="text-sm font-semibold text-gray-900">{booth.name}</p>
-										<p class="text-xs text-gray-500">ID: {booth.id}</p>
-									</div>
-									{#if editingBoothId === booth.id}
-										<div class="flex flex-1 flex-col gap-2 md:flex-row">
-											<input
-												class="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 focus:outline-none"
-												placeholder="새 부스 이름"
-												bind:value={editingBoothForm.name}
-											/>
-											<input
-												class="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 focus:outline-none"
-												placeholder="새 호스트 ID"
-												bind:value={editingBoothForm.userId}
-											/>
-										</div>
-										<div class="flex w-full gap-2 pt-2">
-											<button
-												type="button"
-												class="flex-1 rounded-lg bg-cyan-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-cyan-700"
-												on:click={submitBoothUpdate}
-											>
-												저장
-											</button>
-											<button
-												type="button"
-												class="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-600 transition hover:bg-gray-50"
-												on:click={cancelEditBooth}
-											>
-												취소
-											</button>
-										</div>
-									{:else}
-										<div class="flex gap-2">
-											<button
-												type="button"
-												class="rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-600 transition hover:bg-gray-50"
-												on:click={() => startEditBooth(booth)}
-											>
-												수정
-											</button>
-											<button
-												type="button"
-												class="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-50"
-												on:click={() => deleteBooth(booth.id)}
-											>
-												삭제
-											</button>
-										</div>
-									{/if}
-								</div>
-							</div>
-						{/each}
-					{/if}
-				</div>
-			</div>
-		{/if}
-	{:else if activePanel === 'products'}
-		{#if !canManageProducts}
-			<p class="rounded-2xl bg-white p-5 text-sm text-red-500 shadow">
-				부스 관리자만 접근할 수 있습니다.
+	<section class="flex-1 rounded-3xl bg-white p-5 shadow">
+		<h2 class="mb-4 text-base font-semibold text-gray-900">무엇을 하시겠어요?</h2>
+		{#if availableActions.length === 0}
+			<p class="rounded-xl border border-dashed border-gray-200 px-4 py-6 text-center text-sm text-gray-500">
+				현재 권한으로 사용할 수 있는 기능이 없습니다.
 			</p>
 		{:else}
-			<div class="space-y-4 rounded-2xl bg-white p-5 shadow">
-				<div class="flex flex-wrap items-center justify-between gap-3">
-					<div>
-						<p class="text-xs font-semibold text-cyan-600">부스 관리자</p>
-						<h2 class="text-base font-semibold text-gray-900">상품 관리</h2>
-					</div>
-					{#if !isAdmin}
-						<p class="text-xs text-gray-500">본인의 부스만 수정할 수 있습니다.</p>
-					{/if}
-				</div>
-				{#if booths.length === 0}
-					<p class="text-sm text-gray-500">먼저 부스를 생성해주세요.</p>
-				{:else}
-					<div class="space-y-3">
-						<label class="text-xs font-semibold text-gray-500" for="manage-booth-select">
-							부스 선택
-						</label>
-						<select
-							id="manage-booth-select"
-							class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 focus:outline-none"
-							bind:value={manageBoothId}
-						>
-							{#each booths as boothOption (boothOption.id)}
-								<option value={boothOption.id}>{boothOption.name} (ID: {boothOption.id})</option>
-							{/each}
-						</select>
-					</div>
-					<div class="space-y-3">
-						<h3 class="text-sm font-semibold text-gray-900">상품 목록</h3>
-						{#if !manageBoothId}
-							<p class="text-sm text-gray-500">부스를 선택해주세요.</p>
-						{:else if managedProducts.length === 0}
-							<p class="text-sm text-gray-500">선택한 부스에 등록된 상품이 없습니다.</p>
-						{:else}
-							{#each managedProducts as product (product.id)}
-								<div class="rounded-xl border border-gray-100 p-4">
-									<div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-										<div>
-											<p class="text-sm font-semibold text-gray-900">{product.name}</p>
-											<p class="text-xs text-gray-500">
-												ID: {product.id} · {formatCurrency(product.price)}
-											</p>
-											{#if product.description}
-												<p class="text-xs text-gray-500">{product.description}</p>
-											{/if}
-										</div>
-										{#if editingProductId === product.id}
-											<div class="w-full space-y-2 md:w-1/2">
-												<input
-													class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 focus:outline-none"
-													placeholder="상품명"
-													bind:value={editingProductForm.name}
-												/>
-												<textarea
-													class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 focus:outline-none"
-													rows="2"
-													placeholder="설명"
-													bind:value={editingProductForm.description}
-												/>
-												<input
-													type="number"
-													class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 focus:outline-none"
-													placeholder="가격"
-													bind:value={editingProductForm.price}
-												/>
-												<div class="flex gap-2">
-													<button
-														type="button"
-														class="flex-1 rounded-lg bg-cyan-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-cyan-700"
-														on:click={submitProductUpdate}
-													>
-														저장
-													</button>
-													<button
-														type="button"
-														class="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-600 transition hover:bg-gray-50"
-														on:click={cancelEditProduct}
-													>
-														취소
-													</button>
-												</div>
-											</div>
-										{:else}
-											<div class="flex gap-2">
-												<button
-													type="button"
-													class="rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-600 transition hover:bg-gray-50"
-													on:click={() => startEditProduct(product)}
-												>
-													수정
-												</button>
-												<button
-													type="button"
-													class="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-50"
-													on:click={() => deleteProduct(product.id)}
-												>
-													삭제
-												</button>
-											</div>
-										{/if}
-									</div>
-								</div>
-							{/each}
-						{/if}
-					</div>
-					<form class="space-y-2 pt-2" on:submit|preventDefault={submitNewProduct}>
-						<h3 class="text-sm font-semibold text-gray-900">상품 추가</h3>
-						<input
-							class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 focus:outline-none"
-							placeholder="상품명"
-							bind:value={newProductForm.name}
-						/>
-						<textarea
-							class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 focus:outline-none"
-							rows="2"
-							placeholder="설명"
-							bind:value={newProductForm.description}
-						/>
-						<input
-							type="number"
-							min="0"
-							class="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 focus:outline-none"
-							placeholder="가격"
-							bind:value={newProductForm.price}
-						/>
-						<button
-							type="submit"
-							class="w-full rounded-lg bg-cyan-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-cyan-700"
-						>
-							상품 추가
-						</button>
-					</form>
-				{/if}
+			<div class="grid grid-cols-2 gap-3">
+				{#each availableActions as action (action.id)}
+					<button
+						on:click={() => navigate(action.id)}
+						class="flex flex-col gap-2 rounded-2xl bg-gradient-to-br from-gray-50 to-gray-100 p-4 text-left text-gray-800 transition hover:from-cyan-50 hover:to-cyan-100"
+					>
+						<span class="text-2xl">{action.emoji}</span>
+						<div>
+							<p class="text-sm font-bold">{action.label}</p>
+							<p class="text-xs text-gray-500">{action.description}</p>
+						</div>
+					</button>
+				{/each}
 			</div>
 		{/if}
-	{:else if activePanel === 'credentials'}
-		<div class="space-y-3 rounded-2xl bg-white p-5 shadow">
-			<h2 class="text-base font-semibold text-gray-900">비밀번호 / PIN 변경</h2>
-			<form class="grid gap-2 md:grid-cols-3" on:submit|preventDefault={submitCredentials}>
-				<input
-					type="password"
-					class="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 focus:outline-none"
-					placeholder="새 비밀번호"
-					bind:value={credentialForm.password}
-				/>
-				<input
-					type="password"
-					inputmode="numeric"
-					maxlength="6"
-					class="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 focus:outline-none"
-					placeholder="새 PIN (4~6자리)"
-					bind:value={credentialForm.pin}
-				/>
-				<button
-					type="submit"
-					class="rounded-lg bg-cyan-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-cyan-700 disabled:cursor-not-allowed disabled:bg-cyan-200"
-					disabled={!credentialForm.password.trim() && !credentialForm.pin.trim()}
-				>
-					변경하기
-				</button>
-			</form>
-			<p class="text-xs text-gray-500">두 항목 중 입력한 값만 변경됩니다.</p>
-		</div>
-	{/if}
+	</section>
 </div>
 
 <style>
-	.quick-btn {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		padding: 16px;
-		border-radius: 16px;
-		background: #e0f2ff;
-		color: #0e7490;
-		font-size: 14px;
-		font-weight: 600;
-		gap: 6px;
-		transition: background 0.2s ease;
-	}
-
-	.quick-btn:hover {
-		background: #bae6fd;
-	}
-
-	.quick-btn span {
-		display: block;
-		text-align: center;
+	button {
+		border: none;
+		cursor: pointer;
 	}
 </style>
