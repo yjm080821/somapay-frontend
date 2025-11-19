@@ -6,12 +6,12 @@
 	import Navigation from '$lib/components/Navigation.svelte';
 	import LoginScreen from '$lib/components/screens/LoginScreen.svelte';
 	import * as api from '$lib/api';
-	import { normalizePage } from '$lib/utils/format';
 
 	const SESSION_KEY = 'somapay:session';
+	const CHARGE_CACHE_KEY = 'somapay:charge-ids';
 
 	let currentScreen = 'home';
-	let session = { token: null, userId: null, role: null };
+	let session = { token: null, userId: null, username: null, role: null };
 	let appReady = false;
 	let loginPending = false;
 	let loginError = '';
@@ -20,9 +20,11 @@
 	let userProfile = null;
 	let booths = [];
 	let products = [];
-	let transactionsPage = normalizePage();
-	let chargesPage = normalizePage();
-	let adminChargesPage = normalizePage();
+	let menuError = '';
+
+	let transactions = [];
+	let userChargeRequests = [];
+	let adminChargeRequests = [];
 
 	let chargePending = false;
 	let chargeError = '';
@@ -38,12 +40,48 @@
 		return typeof window !== 'undefined' && typeof localStorage !== 'undefined';
 	}
 
+	function readChargeCache() {
+		if (!isBrowser()) return {};
+		const raw = localStorage.getItem(CHARGE_CACHE_KEY);
+		if (!raw) return {};
+		try {
+			return JSON.parse(raw) || {};
+		} catch {
+			return {};
+		}
+	}
+
+	function persistChargeCache(map) {
+		if (!isBrowser()) return;
+		localStorage.setItem(CHARGE_CACHE_KEY, JSON.stringify(map));
+	}
+
+	function getStoredChargeIds() {
+		if (!session.username) return [];
+		const map = readChargeCache();
+		return map[session.username] ?? [];
+	}
+
+	function addChargeId(id) {
+		if (!session.username || !id) return;
+		const map = readChargeCache();
+		const existing = map[session.username] ?? [];
+		if (!existing.includes(id)) {
+			map[session.username] = [...existing, id];
+			persistChargeCache(map);
+		}
+	}
+
 	function isLoggedIn() {
-		return Boolean(session.token && session.userId);
+		return Boolean(session.token);
+	}
+
+	function currentRole() {
+		return userProfile?.role || session.role || 'USER';
 	}
 
 	function isAdmin() {
-		return ['ADMIN', 'MANAGER'].includes((session.role || '').toUpperCase());
+		return (currentRole() || '').toUpperCase() === 'ADMIN';
 	}
 
 	function saveSession() {
@@ -57,20 +95,116 @@
 	}
 
 	function resetState() {
-		session = { token: null, userId: null, role: null };
+		session = { token: null, userId: null, username: null, role: null };
 		userProfile = null;
 		booths = [];
 		products = [];
-		transactionsPage = normalizePage();
-		chargesPage = normalizePage();
-		adminChargesPage = normalizePage();
-		globalError = '';
+		menuError = '';
+		transactions = [];
+		userChargeRequests = [];
+		adminChargeRequests = [];
+		chargePending = false;
 		chargeError = '';
+		adminActionPendingId = null;
+		paymentProcessing = false;
 		paymentError = '';
+		paymentResetKey = 0;
+		historyLoading = false;
 		currentScreen = 'home';
+		globalError = '';
 		api.clearStoredToken();
 		clearSessionStorage();
 		appReady = true;
+	}
+
+	async function ensureUserProfile(transactionsSnapshot = []) {
+		if (!session.token) return;
+
+		const assignUser = (user) => {
+			if (!user) return;
+			userProfile = user;
+			session.userId = user.id;
+			session.username = session.username || user.username;
+			session.role = user.role;
+		};
+
+		if (session.userId) {
+			try {
+				const user = await api.getUser(session.userId);
+				assignUser(user);
+				return;
+			} catch {
+				session.userId = null;
+			}
+		}
+
+		const numericCandidate = Number(session.username);
+		if (!Number.isNaN(numericCandidate) && numericCandidate > 0) {
+			try {
+				const user = await api.getUser(numericCandidate);
+				assignUser(user);
+				return;
+			} catch {
+				// ignore and keep trying
+			}
+		}
+
+		const ownedTx = (transactionsSnapshot || []).find(
+			(tx) => tx?.edges?.user?.username === session.username
+		);
+		if (ownedTx?.edges?.user) {
+			assignUser(ownedTx.edges.user);
+			return;
+		}
+
+		throw new Error('사용자 정보를 확인할 수 없습니다.');
+	}
+
+	async function loadUserChargeRequests() {
+		const ids = getStoredChargeIds();
+		if (!ids.length) {
+			userChargeRequests = [];
+			return;
+		}
+
+		const results = await Promise.all(
+			ids.map((id) =>
+				api
+					.getChargeRequest(id)
+					.then((data) => data)
+					.catch(() => null)
+			)
+		);
+
+		userChargeRequests = results.filter(Boolean);
+	}
+
+	async function refreshBoothsAndProducts() {
+		menuError = '';
+		const boothList = await api.listBooths();
+		booths = boothList;
+
+		const aggregated = [];
+		const boothErrors = [];
+
+		for (const booth of boothList) {
+			try {
+				const boothProducts = await api.listProductsByBooth(booth.id);
+				const normalized = (boothProducts || []).map((product) => ({
+					...product,
+					boothId: booth.id
+				}));
+				aggregated.push(...normalized);
+			} catch (error) {
+				boothErrors.push(`${booth.name || `부스 ${booth.id}`}: ${error.message}`);
+			}
+		}
+
+		products = aggregated;
+
+		if (boothErrors.length) {
+			menuError = `일부 메뉴를 불러오지 못했습니다. (${boothErrors.join(', ')})`;
+		}
 	}
 
 	async function bootstrap() {
@@ -81,40 +215,80 @@
 
 		appReady = false;
 		globalError = '';
-		try {
-			const [user, boothList, productList, txPage, chargePage] = await Promise.all([
-				api.getUserById(session.userId),
-				api.getBooths(),
-				api.getProducts(),
-				api.getTransactionsByUser(session.userId, 0),
-				api.getUserCharges(session.userId, 0)
-			]);
 
-			userProfile = user;
-			booths = boothList;
-			products = productList;
-			transactionsPage = normalizePage(txPage);
-			chargesPage = normalizePage(chargePage);
+		try {
+			const transactionsPromise = api.listTransactions();
+			await refreshBoothsAndProducts();
+			const txList = await transactionsPromise;
+
+			transactions = Array.isArray(txList) ? txList : [];
+
+			await ensureUserProfile(transactions);
+			await loadUserChargeRequests();
 
 			if (isAdmin()) {
-				const adminPage = await api.getChargeRequests(0);
-				adminChargesPage = normalizePage(adminPage);
+				try {
+					adminChargeRequests = await api.listChargeRequests();
+				} catch (error) {
+					globalError = error.message || '충전 요청을 불러오지 못했습니다.';
+				}
 			} else {
-				adminChargesPage = normalizePage();
+				adminChargeRequests = [];
 			}
 		} catch (error) {
 			globalError = error.message || '데이터를 불러오지 못했습니다.';
 		} finally {
+			saveSession();
 			appReady = true;
+		}
+	}
+
+	async function refreshUserProfile() {
+		if (!isLoggedIn()) return;
+		try {
+			if (!session.userId) {
+				await ensureUserProfile(transactions);
+			} else {
+				const user = await api.getUser(session.userId);
+				userProfile = user;
+				session.role = user?.role || session.role;
+			}
+			saveSession();
+		} catch (error) {
+			globalError = error.message || '사용자 정보를 불러오지 못했습니다.';
+		}
+	}
+
+	async function refreshTransactions() {
+		if (!isLoggedIn()) return;
+		historyLoading = true;
+		try {
+			const list = await api.listTransactions();
+			transactions = Array.isArray(list) ? list : [];
+		} catch (error) {
+			globalError = error.message || '거래 내역을 불러오지 못했습니다.';
+		} finally {
+			historyLoading = false;
+		}
+	}
+
+	async function refreshAdminCharges() {
+		if (!isAdmin()) {
+			adminChargeRequests = [];
+			return;
+		}
+
+		try {
+			adminChargeRequests = await api.listChargeRequests();
+		} catch (error) {
+			globalError = error.message || '충전 요청을 불러오지 못했습니다.';
 		}
 	}
 
 	async function handleLogin(event) {
 		const { studentNumber, password } = event.detail;
-		const parsedStudentNumber = Number(studentNumber);
-
-		if (!studentNumber || Number.isNaN(parsedStudentNumber)) {
-			loginError = '학번을 숫자로 입력해주세요.';
+		if (!studentNumber || !password) {
+			loginError = '학번과 비밀번호를 모두 입력해주세요.';
 			return;
 		}
 
@@ -122,15 +296,12 @@
 		loginError = '';
 
 		try {
-			const payload = await api.login({
-				studentNumber: parsedStudentNumber,
-				password
-			});
-
+			const payload = await api.login({ studentNumber, password });
 			session = {
 				token: payload.token,
-				userId: payload.userId,
-				role: payload.role
+				userId: null,
+				username: studentNumber,
+				role: null
 			};
 			api.setStoredToken(payload.token);
 			saveSession();
@@ -142,72 +313,8 @@
 		}
 	}
 
-	async function handleLogout() {
-		try {
-			if (isLoggedIn()) {
-				await api.logout();
-			}
-		} catch {
-			// ignore
-		} finally {
-			resetState();
-		}
-	}
-
-	async function refreshUserProfile() {
-		if (!isLoggedIn()) return;
-		try {
-			userProfile = await api.getUserById(session.userId);
-		} catch (error) {
-			globalError = error.message || '사용자 정보를 불러오지 못했습니다.';
-		}
-	}
-
-	async function refreshTransactions(page = 0, append = false) {
-		if (!isLoggedIn()) return;
-		historyLoading = true;
-		try {
-			const response = await api.getTransactionsByUser(session.userId, page);
-			const normalized = normalizePage(response);
-			if (append) {
-				transactionsPage = {
-					...normalized,
-					content: [...(transactionsPage.content ?? []), ...normalized.content],
-					number: normalized.number,
-					totalPages: normalized.totalPages
-				};
-			} else {
-				transactionsPage = normalized;
-			}
-		} catch (error) {
-			globalError = error.message || '거래 내역을 불러오지 못했습니다.';
-		} finally {
-			historyLoading = false;
-		}
-	}
-
-	async function refreshCharges() {
-		if (!isLoggedIn()) return;
-		try {
-			const page = await api.getUserCharges(session.userId, 0);
-			chargesPage = normalizePage(page);
-		} catch (error) {
-			chargeError = error.message || '충전 내역을 불러오지 못했습니다.';
-		}
-	}
-
-	async function refreshAdminCharges() {
-		if (!isAdmin()) {
-			adminChargesPage = normalizePage();
-			return;
-		}
-
-		try {
-			const page = await api.getChargeRequests(0);
-			adminChargesPage = normalizePage(page);
-		} catch (error) {
-			globalError = error.message || '충전 요청을 불러오지 못했습니다.';
-		}
+	function handleLogout() {
+		resetState();
 	}
 
 	async function handleChargeRequest(event) {
@@ -216,12 +323,11 @@
 
 		chargePending = true;
 		chargeError = '';
+
 		try {
-			await api.requestCharge(session.userId, amount);
-			await refreshCharges();
-			if (isAdmin()) {
-				await refreshAdminCharges();
-			}
+			const response = await api.createChargeRequest(amount);
+			userChargeRequests = [response, ...userChargeRequests];
+			addChargeId(response.id);
 		} catch (error) {
 			chargeError = error.message || '충전 요청에 실패했습니다.';
 		} finally {
@@ -234,10 +340,13 @@
 		if (!id) return;
 		adminActionPendingId = id;
 		try {
-			await api.approveCharge(id);
-			await Promise.all([refreshCharges(), refreshAdminCharges(), refreshUserProfile()]);
+			const updated = await api.updateChargeRequest(id, 'APPROVED');
+			adminChargeRequests = adminChargeRequests.map((request) =>
+				request.id === id ? updated : request
+			);
+			await Promise.all([refreshUserProfile(), loadUserChargeRequests(), refreshAdminCharges()]);
 		} catch (error) {
-			globalError = error.message || '충전 승인에 실패했습니다.';
+			globalError = error.message || '충전 승인 중 오류가 발생했습니다.';
 		} finally {
 			adminActionPendingId = null;
 		}
@@ -248,20 +357,15 @@
 		if (!id) return;
 		adminActionPendingId = id;
 		try {
-			await api.rejectCharge(id);
+			const updated = await api.updateChargeRequest(id, 'REJECTED');
+			adminChargeRequests = adminChargeRequests.map((request) =>
+				request.id === id ? updated : request
+			);
 			await refreshAdminCharges();
 		} catch (error) {
-			globalError = error.message || '충전 거절에 실패했습니다.';
+			globalError = error.message || '충전 거절 중 오류가 발생했습니다.';
 		} finally {
 			adminActionPendingId = null;
-		}
-	}
-
-	async function refreshProducts() {
-		try {
-			products = await api.getProducts();
-		} catch (error) {
-			globalError = error.message || '메뉴 정보를 불러오지 못했습니다.';
 		}
 	}
 
@@ -274,19 +378,22 @@
 
 		try {
 			for (const item of items) {
-				await api.createTransaction(session.userId, {
-					pin,
-					productId: item.productId,
-					quantity: item.quantity
+				await api.createTransaction({
+					product_id: item.productId ?? item.id,
+					quantity: item.quantity,
+					pin
 				});
 			}
 
 			paymentResetKey += 1;
+
 			await Promise.all([
 				refreshUserProfile(),
-				refreshTransactions(0),
-				refreshCharges(),
-				refreshProducts()
+				refreshTransactions(),
+				loadUserChargeRequests(),
+				refreshBoothsAndProducts().catch((error) => {
+					menuError = error.message || '메뉴 정보를 불러오지 못했습니다.';
+				})
 			]);
 
 			currentScreen = 'home';
@@ -299,14 +406,6 @@
 
 	function handleNav(event) {
 		currentScreen = event.detail;
-	}
-
-	function loadMoreHistory() {
-		const nextPage = (transactionsPage.number ?? 0) + 1;
-		if (nextPage >= (transactionsPage.totalPages ?? 0)) {
-			return;
-		}
-		refreshTransactions(nextPage, true);
 	}
 
 	onMount(() => {
@@ -326,7 +425,7 @@
 					return;
 				}
 			} catch {
-				// ignore parse error
+				// ignore parse errors
 			}
 		}
 
@@ -346,21 +445,25 @@
 			<div class="bg-red-50 px-4 py-2 text-center text-sm text-red-600">{globalError}</div>
 		{/if}
 
+		{#if menuError}
+			<div class="bg-amber-50 px-4 py-2 text-center text-xs text-amber-900">{menuError}</div>
+		{/if}
+
 		<div class="flex-1 overflow-y-auto">
 			{#if currentScreen === 'home'}
 				<HomeScreen
 					user={userProfile}
-					transactions={transactionsPage.content}
-					charges={chargesPage.content}
-					chargeRequests={adminChargesPage.content}
-					role={session.role}
+					{transactions}
+					charges={userChargeRequests}
+					chargeRequests={adminChargeRequests}
+					role={currentRole()}
 					{chargePending}
 					{chargeError}
 					{adminActionPendingId}
 					on:navigate={handleNav}
-					on:requestCharge={(e) => handleChargeRequest(e)}
-					on:approveCharge={(e) => handleApproveCharge(e)}
-					on:rejectCharge={(e) => handleRejectCharge(e)}
+					on:requestCharge={handleChargeRequest}
+					on:approveCharge={handleApproveCharge}
+					on:rejectCharge={handleRejectCharge}
 					on:logout={handleLogout}
 				/>
 			{:else if currentScreen === 'payment'}
@@ -375,12 +478,10 @@
 				/>
 			{:else if currentScreen === 'history'}
 				<HistoryScreen
-					transactions={transactionsPage.content}
+					{transactions}
 					loading={historyLoading}
-					canLoadMore={(transactionsPage.number ?? 0) + 1 < (transactionsPage.totalPages ?? 0)}
 					on:navigate={handleNav}
-					on:refresh={() => refreshTransactions(0)}
-					on:loadMore={loadMoreHistory}
+					on:refresh={refreshTransactions}
 				/>
 			{/if}
 		</div>

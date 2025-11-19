@@ -4,8 +4,6 @@
 
 	export let transactions = [];
 	export let loading = false;
-	export let error = '';
-	export let canLoadMore = false;
 
 	const dispatch = createEventDispatcher();
 
@@ -17,22 +15,18 @@
 		dispatch('refresh');
 	}
 
-	function loadMore() {
-		dispatch('loadMore');
-	}
-
 	$: normalizedTransactions = toArray(transactions).map((tx) => {
-		const amount =
-			tx.amount ?? tx.point ?? (tx.product?.price ?? tx.price ?? 0) * (tx.quantity ?? 1);
+		const amount = Number(tx.amount ?? 0);
+		const boothName = tx.boothName || tx.edges?.booth?.name;
+		const productName = tx.productName || tx.edges?.product?.name;
 
 		return {
-			id: tx.id ?? `${tx.productId ?? 'tx'}-${tx.createdAt ?? Math.random()}`,
-			title: tx.product?.name || tx.productName || tx.boothName || `상품 #${tx.productId ?? '-'}`,
-			subtitle: `${formatDateTime(tx.createdAt || tx.updatedAt)} · ${
-				tx.boothName ? `부스 ${tx.boothName}` : `상품 ${tx.productId ?? '-'}`
+			id: tx.id ?? `${tx.product_id ?? 'tx'}-${tx.timestamp ?? Math.random()}`,
+			title: productName || boothName || `거래 #${tx.id ?? '-'}`,
+			subtitle: `${formatDateTime(tx.timestamp || tx.createdAt || tx.updatedAt)} · ${
+				boothName ? `부스 ${boothName}` : `상품 ${tx.productId ?? '-'}`
 			}`,
-			amount,
-			type: amount < 0 ? 'out' : 'in'
+			amount
 		};
 	});
 </script>
@@ -43,7 +37,7 @@
 		<h1 class="flex-1 text-lg font-bold">거래 내역</h1>
 		<button
 			on:click={refresh}
-			class="rounded-full border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-600 transition hover:bg-gray-100"
+			class="rounded-full border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-600 transition hover:bg-gray-100 disabled:cursor-not-allowed"
 			disabled={loading}
 		>
 			새로고침
@@ -64,31 +58,13 @@
 								<p class="text-sm font-semibold text-gray-900">{tx.title}</p>
 								<p class="text-xs text-gray-500">{tx.subtitle}</p>
 							</div>
-							<p
-								class={`text-sm font-bold ${tx.type === 'out' ? 'text-red-500' : 'text-green-600'}`}
-							>
-								{tx.type === 'out' ? '-' : '+'}{formatCurrency(Math.abs(tx.amount))}
-							</p>
+							<p class="text-sm font-bold text-red-500">-{formatCurrency(Math.abs(tx.amount))}</p>
 						</div>
 					</div>
 				{/each}
 			</div>
 		{/if}
 	</div>
-
-	{#if error}
-		<p class="mt-4 rounded-xl bg-red-50 px-4 py-2 text-sm text-red-600">{error}</p>
-	{/if}
-
-	{#if canLoadMore}
-		<button
-			on:click={loadMore}
-			class="mt-4 w-full rounded-xl border border-gray-300 py-3 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-70"
-			disabled={loading}
-		>
-			더 불러오기
-		</button>
-	{/if}
 </div>
 
 <style>

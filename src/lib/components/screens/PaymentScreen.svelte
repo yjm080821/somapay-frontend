@@ -163,13 +163,13 @@
 				</div>
 
 				<div class="rounded-xl bg-white p-4 shadow">
-					<label class="text-sm font-semibold text-gray-700" for="checkout-pin"> PIN 인증 </label>
+					<label class="text-sm font-semibold text-gray-700" for="checkout-pin">PIN 인증</label>
 					<input
 						id="checkout-pin"
 						type="password"
 						inputmode="numeric"
 						maxlength="6"
-						placeholder="결제 PIN을 입력하세요"
+						placeholder="결제 PIN을 입력해주세요"
 						bind:value={checkoutPin}
 						class="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 focus:outline-none"
 						disabled={processing}

@@ -12,7 +12,6 @@
 	export let adminActionPendingId = null;
 
 	const dispatch = createEventDispatcher();
-
 	const getUid = () => globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
 
 	let chargeAmount = '';
@@ -20,10 +19,6 @@
 
 	function goTo(screen) {
 		dispatch('navigate', screen);
-	}
-
-	function emitChargeRequest(amount) {
-		dispatch('requestCharge', amount);
 	}
 
 	function submitCharge() {
@@ -35,7 +30,7 @@
 			return;
 		}
 
-		emitChargeRequest(numericAmount);
+		dispatch('requestCharge', numericAmount);
 		chargeAmount = '';
 	}
 
@@ -52,24 +47,33 @@
 	}
 
 	$: normalizedTransactions = toArray(transactions)
-		.map((tx) => ({
-			id: tx.id ?? getUid(),
-			title: tx.product?.name || tx.productName || tx.boothName || `거래 #${tx.id || ''}`,
-			subtitle: formatDateTime(tx.createdAt || tx.approvedAt || tx.timestamp),
-			amount: tx.amount ?? tx.point ?? (tx.product?.price ?? tx.price ?? 0) * (tx.quantity ?? 1),
-			type: (tx.amount ?? tx.point ?? 0) < 0 ? 'out' : 'in'
-		}))
+		.map((tx) => {
+			const boothName = tx.boothName || tx.edges?.booth?.name;
+			const amount = Number(tx.amount ?? 0);
+			const isSelf = user?.id && (tx.userId ?? tx.edges?.user?.id) === user.id;
+
+			return {
+				id: tx.id ?? getUid(),
+				title: boothName || tx.edges?.product?.name || `거래 #${tx.id || ''}`,
+				subtitle: formatDateTime(tx.timestamp || tx.createdAt || tx.updatedAt),
+				amount: Math.abs(amount),
+				type: isSelf ? 'out' : 'in'
+			};
+		})
 		.slice(0, 5);
 
 	$: normalizedCharges = toArray(charges).map((charge) => ({
 		id: charge.id ?? getUid(),
-		amount: charge.amount ?? 0,
-		status: charge.status ?? 'UNKNOWN',
-		date: formatDateTime(charge.createdAt || charge.updatedAt),
-		userId: charge.userId
+		amount: Number(charge.amount ?? 0),
+		status: charge.status ?? 'PENDING',
+		date: formatDateTime(charge.timestamp || charge.updatedAt || charge.createdAt),
+		userId: charge.userId ?? charge.edges?.user?.id
 	}));
 
-	$: adminCharges = toArray(chargeRequests);
+	$: adminCharges = toArray(chargeRequests).map((request) => ({
+		...request,
+		userLabel: request.userId || request.edges?.user?.username || request.edges?.user?.id || '-'
+	}));
 </script>
 
 <div class="space-y-6 bg-gray-50 p-6">
@@ -77,9 +81,11 @@
 		<div>
 			<p class="text-sm text-gray-500">안녕하세요,</p>
 			<h1 class="text-2xl font-bold text-gray-900">
-				{user?.studentNumber ? `${user.studentNumber}님` : '사용자님'}
+				{user?.username ? `${user.username}님` : '사용자님'}
 			</h1>
-			<p class="mt-1 rounded-full bg-gray-200 px-3 py-1 text-xs font-semibold text-gray-600">
+			<p
+				class="mt-1 inline-flex rounded-full bg-gray-200 px-3 py-1 text-xs font-semibold text-gray-600"
+			>
 				{role}
 			</p>
 		</div>
@@ -102,7 +108,7 @@
 			<span>결제하기</span>
 		</button>
 		<button class="quick-btn" on:click={submitCharge}>
-			<span class="text-2xl">⚡</span>
+			<span class="text-2xl">⚡️</span>
 			<span>즉시충전</span>
 		</button>
 		<button class="quick-btn" on:click={() => goTo('history')}>
@@ -115,7 +121,7 @@
 		<div class="mb-4 flex items-center justify-between">
 			<div>
 				<h2 class="text-base font-semibold text-gray-900">포인트 충전</h2>
-				<p class="text-xs text-gray-500">충전 요청은 승인 후 적용됩니다.</p>
+				<p class="text-xs text-gray-500">충전 요청은 관리자 승인 후 적용됩니다.</p>
 			</div>
 		</div>
 
@@ -180,7 +186,7 @@
 							<p class="text-xs text-gray-500">{tx.subtitle}</p>
 						</div>
 						<p class={`text-sm font-bold ${tx.type === 'out' ? 'text-red-500' : 'text-green-600'}`}>
-							{tx.type === 'out' ? '-' : '+'}{formatCurrency(Math.abs(tx.amount))}
+							{tx.type === 'out' ? '-' : '+'}{formatCurrency(tx.amount)}
 						</p>
 					</div>
 				{/each}
@@ -191,7 +197,7 @@
 	<div class="rounded-2xl bg-white p-5 shadow">
 		<h2 class="mb-4 text-base font-semibold text-gray-900">충전 요청 내역</h2>
 		{#if normalizedCharges.length === 0}
-			<p class="text-sm text-gray-500">충전 기록이 없습니다.</p>
+			<p class="text-sm text-gray-500">충전 요청 기록이 없습니다.</p>
 		{:else}
 			<div class="space-y-3">
 				{#each normalizedCharges as charge (charge.id)}
@@ -200,7 +206,7 @@
 					>
 						<div>
 							<p class="text-sm font-semibold text-gray-900">{formatCurrency(charge.amount)}</p>
-							<p class="text-xs text-gray-500">{charge.date}</p>
+							<p class="text-xs text-gray-500">{charge.date || '-'}</p>
 						</div>
 						<span
 							class={`rounded-full px-3 py-1 text-xs font-semibold ${
@@ -231,7 +237,7 @@
 						<div class="flex items-center justify-between">
 							<div>
 								<p class="text-sm font-semibold text-gray-900">
-									사용자 #{request.userId ?? '-'}
+									사용자 {request.userLabel ?? '-'}
 								</p>
 								<p class="text-xs text-gray-500">
 									{formatDateTime(request.createdAt || request.updatedAt)}
@@ -281,6 +287,7 @@
 	.quick-btn:hover {
 		background: #bae6fd;
 	}
+
 	.quick-btn span {
 		display: block;
 		text-align: center;

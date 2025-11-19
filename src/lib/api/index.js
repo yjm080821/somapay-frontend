@@ -8,56 +8,61 @@ import {
 
 export { API_BASE_URL, getStoredToken, setStoredToken, clearStoredToken };
 
-export const login = (credentials) =>
-	apiRequest('/auth/login', { method: 'POST', data: credentials, auth: false });
+export const login = ({ studentNumber, password }) =>
+	apiRequest('/login', {
+		method: 'POST',
+		data: {
+			student_number: studentNumber,
+			password
+		},
+		auth: false
+	});
 
-export const logout = () => apiRequest('/auth/logout', { method: 'POST' });
+export const createUser = (payload) => apiRequest('/users', { method: 'POST', data: payload });
 
-export const getRole = () => apiRequest('/auth/role');
+export const getUser = (id) => apiRequest(`/users/${id}`);
 
-export const getUsers = () => apiRequest('/user');
+export const updateUser = (id, payload) =>
+	apiRequest(`/users/${id}`, { method: 'PATCH', data: payload });
 
-export const createUser = (payload) => apiRequest('/user', { method: 'POST', data: payload });
+export const createBooth = (payload) => apiRequest('/booths', { method: 'POST', data: payload });
 
-export const getUserById = (id) => apiRequest(`/user/${id}`);
+export const getBooth = (id) => apiRequest(`/booths/${id}`);
 
-export const getBooths = () => apiRequest('/booth');
+export const listBooths = () => apiRequest('/booths');
 
-export const getBoothById = (id) => apiRequest(`/booth/${id}`);
+export const updateBooth = (id, payload) =>
+	apiRequest(`/booths/${id}`, { method: 'PATCH', data: payload });
 
-export const getProducts = () => apiRequest('/product');
+export const deleteBooth = (id) => apiRequest(`/booths/${id}`, { method: 'DELETE' });
 
-export const getProductById = (id) => apiRequest(`/product/${id}`);
+export const listProducts = () => apiRequest('/products');
 
-export const createProduct = (payload) => apiRequest('/product', { method: 'POST', data: payload });
+export const listProductsByBooth = (boothId) => apiRequest(`/products/booth/${boothId}`);
+
+export const getProduct = (id) => apiRequest(`/products/${id}`);
+
+export const createProduct = (payload) =>
+	apiRequest('/products', { method: 'POST', data: payload });
 
 export const updateProduct = (id, payload) =>
-	apiRequest(`/product/${id}`, { method: 'PUT', data: payload });
+	apiRequest(`/products/${id}`, { method: 'PATCH', data: payload });
 
-export const deleteProduct = (id) => apiRequest(`/product/${id}`, { method: 'DELETE' });
+export const deleteProduct = (id) => apiRequest(`/products/${id}`, { method: 'DELETE' });
 
-export const createTransaction = (userId, payload) =>
-	apiRequest(`/transaction/${userId}`, { method: 'POST', data: payload });
+export const createChargeRequest = (amount) =>
+	apiRequest('/charge-requests', { method: 'POST', data: { amount } });
 
-export const getTransactionById = (id) => apiRequest(`/transaction/${id}`);
+export const listChargeRequests = () => apiRequest('/charge-requests');
 
-export const getTransactionsByUser = (userId, page = 0) =>
-	apiRequest(`/transaction/user/${userId}`, { params: { page } });
+export const getChargeRequest = (id) => apiRequest(`/charge-requests/${id}`);
 
-export const getTransactionsByBooth = (boothId, page = 0) =>
-	apiRequest(`/transaction/booth/${boothId}`, { params: { page } });
+export const updateChargeRequest = (id, status) =>
+	apiRequest(`/charge-requests/${id}`, { method: 'PATCH', data: { status } });
 
-export const getBoothTotalSales = (boothId) => apiRequest(`/transaction/booth/${boothId}/total`);
+export const listTransactions = () => apiRequest('/transactions');
 
-export const requestCharge = (userId, amount) =>
-	apiRequest(`/charge/${userId}`, { method: 'POST', data: { amount } });
+export const getTransaction = (id) => apiRequest(`/transactions/${id}`);
 
-export const getUserCharges = (userId, page = 0) =>
-	apiRequest(`/charge/user/${userId}`, { params: { page } });
-
-export const getChargeRequests = (page = 0) =>
-	apiRequest('/charge/admin/requests', { params: { page } });
-
-export const approveCharge = (id) => apiRequest(`/charge/approve/${id}`, { method: 'POST' });
-
-export const rejectCharge = (id) => apiRequest(`/charge/reject/${id}`, { method: 'POST' });
+export const createTransaction = (payload) =>
+	apiRequest('/transactions', { method: 'POST', data: payload });

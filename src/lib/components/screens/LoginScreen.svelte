@@ -38,7 +38,6 @@
 					id="student-number"
 					type="text"
 					name="student-number"
-					inputmode="numeric"
 					placeholder="예) 2501"
 					bind:value={studentNumber}
 					class="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm shadow-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 focus:outline-none"
@@ -55,7 +54,7 @@
 					id="password"
 					type="password"
 					name="password"
-					placeholder="비밀번호를 입력하세요"
+					placeholder="비밀번호를 입력해주세요"
 					bind:value={password}
 					class="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm shadow-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 focus:outline-none"
 					autocomplete="current-password"
