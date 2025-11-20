@@ -791,12 +791,7 @@
 </script>
 
 {#if !loggedIn}
-	<LoginScreen on:login={handleLogin} {loginPending} error={loginError} />
-{:else if !appReady}
-	<div class="flex min-h-screen items-center justify-center bg-gray-50">
-		<p class="rounded-xl bg-white px-6 py-3 text-sm text-gray-600 shadow">데이터 불러오는 중...</p>
-	</div>
-{:else}
+
 	<main class="flex h-screen flex-col bg-gray-50">
 		{#if globalError}
 			<div class="bg-red-50 px-4 py-2 text-center text-sm text-red-600">{globalError}</div>

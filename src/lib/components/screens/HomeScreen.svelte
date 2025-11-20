@@ -154,7 +154,6 @@
 
 <style>
 	button {
-		border: none;
 		cursor: pointer;
 	}
 </style>

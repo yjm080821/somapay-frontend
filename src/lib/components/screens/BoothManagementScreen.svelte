@@ -53,7 +53,7 @@
 
 <div class="flex h-full flex-col bg-gray-50">
 	<header class="flex items-center gap-3 border-b border-gray-200 bg-white px-4 py-3">
-		<button on:click={goBack} class="text-2xl" aria-label="뒤로 가기">←</button>
+		<button on:click={goBack} class="text-2xl border-0 bg-transparent" aria-label="뒤로 가기">←</button>
 		<h1 class="text-lg font-bold">부스 관리</h1>
 	</header>
 
@@ -145,8 +145,6 @@
 
 <style>
 	button {
-		border: none;
 		cursor: pointer;
-		background: none;
 	}
 </style>

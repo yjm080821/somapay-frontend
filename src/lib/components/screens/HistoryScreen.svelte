@@ -33,7 +33,9 @@
 
 <div class="flex min-h-full flex-col bg-gray-50 p-4">
 	<div class="mb-4 flex items-center gap-3">
-		<button on:click={goBack} class="text-2xl" aria-label="뒤로 가기">←</button>
+		<button on:click={goBack} class="text-2xl border-0 bg-transparent" aria-label="뒤로 가기">
+			←
+		</button>
 		<h1 class="flex-1 text-lg font-bold">거래 내역</h1>
 		<button
 			on:click={refresh}
@@ -69,8 +71,6 @@
 
 <style>
 	button {
-		border: none;
-		background: none;
 		cursor: pointer;
 	}
 </style>

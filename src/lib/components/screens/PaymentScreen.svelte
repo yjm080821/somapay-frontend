@@ -135,7 +135,7 @@
 		/>
 	{:else if currentView === 'checkout'}
 		<div class="flex flex-1 flex-col">
-			<div class="flex items-center gap-3 border-b border-gray-200 bg-white px-4 py-3">
+			<div class="flex items-center gap-3 border-b border-gray-200 bg-cyan px-4 py-3">
 				<button on:click={goBack} class="text-2xl" aria-label="뒤로 가기">←</button>
 				<h1 class="flex-1 text-lg font-bold">결제 확인</h1>
 			</div>

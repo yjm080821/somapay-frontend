@@ -26,25 +26,46 @@
 		dispatch('navigate', 'home');
 	}
 
+	function normalizeId(value) {
+		if (value === undefined || value === null || value === '') {
+			return null;
+		}
+		const asNumber = Number(value);
+		return Number.isNaN(asNumber) ? null : asNumber;
+	}
+
 	function manageableBoothIds() {
+		const currentUserId = normalizeId(user?.id ?? user?.userId ?? user?.user_id);
 		return (booths || [])
 			.filter((booth) => {
 				if (isAdmin) return true;
-				if (isHost) {
-					const ownerId = booth.userId ?? booth.user_id ?? booth.user?.id;
-					return ownerId === user?.id;
+				if (isHost && currentUserId !== null) {
+					const ownerId =
+						booth.userId ??
+						booth.user_id ??
+						booth.user?.id ??
+						booth.edges?.user?.id;
+					const normalizedOwner = normalizeId(ownerId);
+					return normalizedOwner !== null && normalizedOwner === currentUserId;
 				}
 				return false;
 			})
-			.map((booth) => booth.id ?? booth.boothId ?? booth.booth_id)
-			.filter(Boolean);
+			.map((booth) => normalizeId(booth.id ?? booth.boothId ?? booth.booth_id))
+			.filter((id) => id !== null);
 	}
 
 	$: allowedBoothIds = manageableBoothIds();
 	$: allowedProducts = (products || []).filter((product) =>
-		allowedBoothIds.includes(product.boothId ?? product.booth_id ?? product.booth?.id)
+		allowedBoothIds.includes(
+			normalizeId(product.boothId ?? product.booth_id ?? product.booth?.id)
+		)
 	);
-	$: boothLookup = new Map((booths || []).map((booth) => [booth.id ?? booth.boothId ?? booth.booth_id, booth]));
+	$: boothLookup = new Map(
+		(booths || []).map((booth) => [
+			normalizeId(booth.id ?? booth.boothId ?? booth.booth_id),
+			booth
+		])
+	);
 
 	function updateForm(field, value) {
 		form = { ...form, [field]: value };
@@ -94,7 +115,7 @@
 
 <div class="flex h-full flex-col bg-gray-50">
 	<header class="flex items-center gap-3 border-b border-gray-200 bg-white px-4 py-3">
-		<button on:click={goBack} class="text-2xl" aria-label="뒤로 가기">←</button>
+		<button on:click={goBack} class="text-2xl border-0 bg-transparent" aria-label="뒤로 가기">←</button>
 		<h1 class="text-lg font-bold">상품 관리</h1>
 	</header>
 
@@ -226,8 +247,6 @@
 
 <style>
 	button {
-		border: none;
 		cursor: pointer;
-		background: none;
 	}
 </style>
