@@ -94,6 +94,65 @@
 		}
 	}
 
+	function normalizeNumericId(value) {
+		if (value === undefined || value === null || value === '') {
+			return null;
+		}
+		const numberValue = Number(value);
+		return Number.isNaN(numberValue) ? null : numberValue;
+	}
+
+	function normalizeBoothEntry(entry) {
+		if (!entry) return null;
+		const boothNode = entry.booth ?? entry.data ?? entry;
+		const ownerNode =
+			entry.owner ??
+			entry.user ??
+			entry.manager ??
+			entry.host ??
+			entry.boothOwner ??
+			entry.booth?.owner ??
+			entry.booth?.user ??
+			boothNode?.owner ??
+			boothNode?.user ??
+			entry.edges?.user ??
+			entry.edges?.owner ??
+			null;
+
+		const id =
+			normalizeNumericId(
+				boothNode?.id ??
+					entry.id ??
+					boothNode?.boothId ??
+					entry.boothId ??
+					boothNode?.booth_id ??
+					entry.booth_id
+			) ?? null;
+
+		const userId =
+			normalizeNumericId(
+				entry.userId ??
+					entry.user_id ??
+					boothNode?.userId ??
+					boothNode?.user_id ??
+					entry.managerId ??
+					entry.manager_id ??
+					ownerNode?.id
+			) ?? null;
+
+		const name =
+			boothNode?.name ?? entry.name ?? boothNode?.boothName ?? entry.boothName ?? `부스 ${id ?? ''}`;
+
+		return {
+			...boothNode,
+			id,
+			name,
+			userId,
+			owner: ownerNode ?? null,
+			raw: entry
+		};
+	}
+
 	function getTxTimestamp(tx) {
 		return (
 			tx?.timestamp ||
@@ -171,6 +230,10 @@
 					booth?.userId ??
 					booth?.user_id ??
 					booth?.user?.id ??
+					booth?.owner?.id ??
+					booth?.raw?.userId ??
+					booth?.raw?.user_id ??
+					booth?.raw?.user?.id ??
 					booth?.edges?.user?.id ??
 					null;
 				const normalizedOwner =
@@ -330,12 +393,28 @@
 		menuError = '';
 		try {
 			const boothList = await api.listBooths();
-			booths = boothList;
+			const boothArray = Array.isArray(boothList)
+				? boothList
+				: Array.isArray(boothList?.content)
+					? boothList.content
+					: Array.isArray(boothList?.items)
+						? boothList.items
+						: Array.isArray(boothList?.data)
+							? boothList.data
+							: Array.isArray(boothList?.booths)
+								? boothList.booths
+								: Array.isArray(boothList?.results)
+									? boothList.results
+									: [];
+			const normalizedBooths = boothArray
+				.map((booth) => normalizeBoothEntry(booth))
+				.filter((booth) => booth && booth.id !== null);
+			booths = normalizedBooths;
 
 			const aggregated = [];
 			const boothErrors = [];
 
-			for (const booth of boothList) {
+			for (const booth of normalizedBooths) {
 				try {
 					const boothProducts = await api.listProductsByBooth(booth.id);
 					const normalized = (boothProducts || []).map((product) => ({
@@ -791,7 +870,12 @@
 </script>
 
 {#if !loggedIn}
-
+	<LoginScreen on:login={handleLogin} {loginPending} error={loginError} />
+{:else if !appReady}
+	<div class="flex min-h-screen items-center justify-center bg-gray-50">
+		<p class="rounded-xl bg-white px-6 py-3 text-sm text-gray-600 shadow">데이터 불러오는 중...</p>
+	</div>
+{:else}
 	<main class="flex h-screen flex-col bg-gray-50">
 		{#if globalError}
 			<div class="bg-red-50 px-4 py-2 text-center text-sm text-red-600">{globalError}</div>

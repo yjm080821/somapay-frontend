@@ -61,10 +61,9 @@
 		)
 	);
 	$: boothLookup = new Map(
-		(booths || []).map((booth) => [
-			normalizeId(booth.id ?? booth.boothId ?? booth.booth_id),
-			booth
-		])
+		(booths || [])
+			.map((booth) => [normalizeId(booth.id ?? booth.boothId ?? booth.booth_id), booth])
+			.filter(([id]) => id !== null)
 	);
 
 	function updateForm(field, value) {
