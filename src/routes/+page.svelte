@@ -727,7 +727,7 @@
 		try {
 			await api.createBooth({
 				name: name.trim(),
-				manager_username: username.trim()
+				username: username.trim()
 			});
 			await refreshBoothsAndProducts();
 		} catch (error) {
@@ -746,7 +746,7 @@
 			payload.name = name.trim();
 		}
 		if (username && username.trim()) {
-			payload.manager_username = username.trim();
+			payload.username = username.trim();
 		}
 		if (!Object.keys(payload).length) {
 			return;

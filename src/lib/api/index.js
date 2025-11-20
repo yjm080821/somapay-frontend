@@ -31,16 +31,12 @@ function buildBoothPayload(payload = {}) {
 		data.name = payload.name.trim();
 	}
 	const resolvedUsername =
-		payload.manager_username ?? payload.managerUsername ?? payload.username ?? payload.manager;
+		payload.username ??
+		payload.manager_username ??
+		payload.managerUsername ??
+		payload.manager;
 	if (resolvedUsername && resolvedUsername.trim()) {
-		data.manager_username = resolvedUsername.trim();
-	}
-	const resolvedUserId = payload.user_id ?? payload.userId ?? payload.manager_id ?? payload.managerId;
-	if (resolvedUserId !== undefined && resolvedUserId !== null && resolvedUserId !== '') {
-		const numericId = Number(resolvedUserId);
-		if (!Number.isNaN(numericId)) {
-			data.user_id = numericId;
-		}
+		data.username = resolvedUsername.trim();
 	}
 	return data;
 }
