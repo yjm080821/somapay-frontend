@@ -17,10 +17,16 @@
 		price: ''
 	};
 
-	let editingId = null;
-	let editName = '';
-	let editDescription = '';
-	let editPrice = '';
+let editingId = null;
+let editName = '';
+let editDescription = '';
+let editPrice = '';
+function normalizeText(value) {
+	if (value === undefined || value === null) {
+		return '';
+	}
+	return String(value).trim();
+}
 
 	function goBack() {
 		dispatch('navigate', 'home');
@@ -36,17 +42,28 @@
 
 	function manageableBoothIds() {
 		const currentUserId = normalizeId(user?.id ?? user?.userId ?? user?.user_id);
+		const currentUsername = normalizeText(user?.username ?? user?.studentNumber ?? user?.name).toLowerCase();
 		return (booths || [])
 			.filter((booth) => {
 				if (isAdmin) return true;
-				if (isHost && currentUserId !== null) {
-					const ownerId =
-						booth.userId ??
-						booth.user_id ??
-						booth.user?.id ??
-						booth.edges?.user?.id;
-					const normalizedOwner = normalizeId(ownerId);
-					return normalizedOwner !== null && normalizedOwner === currentUserId;
+				if (isHost) {
+					const ownerId = normalizeId(
+						booth.ownerId ?? booth.userId ?? booth.user_id ?? booth.user?.id ?? booth.owner?.id
+					);
+					const ownerUsername = normalizeText(
+						booth.ownerUsername ??
+							booth.managerUsername ??
+							booth.owner?.username ??
+							booth.user?.username
+					).toLowerCase();
+					const matchesId =
+						ownerId !== null && currentUserId !== null && ownerId === currentUserId;
+					const matchesUsername =
+						currentUsername &&
+						ownerUsername &&
+						ownerUsername.length &&
+						ownerUsername === currentUsername;
+					return matchesId || matchesUsername;
 				}
 				return false;
 			})
@@ -182,6 +199,20 @@
 								<p class="text-sm font-semibold text-gray-900">{product.name}</p>
 								<p class="text-xs text-gray-500">
 									{boothLookup.get(product.boothId ?? product.booth_id ?? product.booth?.id)?.name || '부스 정보 없음'}
+								</p>
+								<p class="text-xs text-gray-400">
+									담당자
+									{normalizeText(
+										boothLookup.get(product.boothId ?? product.booth_id ?? product.booth?.id)
+											?.ownerUsername ??
+											boothLookup.get(
+												product.boothId ?? product.booth_id ?? product.booth?.id
+											)?.managerUsername ??
+											boothLookup.get(
+												product.boothId ?? product.booth_id ?? product.booth?.id
+											)?.owner?.username ??
+											'-'
+									)}
 								</p>
 								<p class="mt-1 text-base font-bold text-cyan-700">{formatCurrency(product.price)}</p>
 								{#if product.description}

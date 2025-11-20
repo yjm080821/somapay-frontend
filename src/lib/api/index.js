@@ -25,14 +25,35 @@ export const getUser = (id) => apiRequest(`/users/${id}`);
 export const updateUser = (id, payload) =>
 	apiRequest(`/users/${id}`, { method: 'PATCH', data: payload });
 
-export const createBooth = (payload) => apiRequest('/booths', { method: 'POST', data: payload });
+function buildBoothPayload(payload = {}) {
+	const data = {};
+	if (payload.name && payload.name.trim()) {
+		data.name = payload.name.trim();
+	}
+	const resolvedUsername =
+		payload.manager_username ?? payload.managerUsername ?? payload.username ?? payload.manager;
+	if (resolvedUsername && resolvedUsername.trim()) {
+		data.manager_username = resolvedUsername.trim();
+	}
+	const resolvedUserId = payload.user_id ?? payload.userId ?? payload.manager_id ?? payload.managerId;
+	if (resolvedUserId !== undefined && resolvedUserId !== null && resolvedUserId !== '') {
+		const numericId = Number(resolvedUserId);
+		if (!Number.isNaN(numericId)) {
+			data.user_id = numericId;
+		}
+	}
+	return data;
+}
+
+export const createBooth = (payload) =>
+	apiRequest('/booths', { method: 'POST', data: buildBoothPayload(payload) });
 
 export const getBooth = (id) => apiRequest(`/booths/${id}`);
 
 export const listBooths = () => apiRequest('/booths');
 
 export const updateBooth = (id, payload) =>
-	apiRequest(`/booths/${id}`, { method: 'PATCH', data: payload });
+	apiRequest(`/booths/${id}`, { method: 'PATCH', data: buildBoothPayload(payload) });
 
 export const deleteBooth = (id) => apiRequest(`/booths/${id}`, { method: 'DELETE' });
 

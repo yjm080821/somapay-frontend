@@ -102,6 +102,14 @@
 		return Number.isNaN(numberValue) ? null : numberValue;
 	}
 
+	function normalizeTextValue(value) {
+		if (value === undefined || value === null) {
+			return null;
+		}
+		const text = String(value).trim();
+		return text.length ? text : null;
+	}
+
 	function normalizeBoothEntry(entry) {
 		if (!entry) return null;
 		const boothNode = entry.booth ?? entry.data ?? entry;
@@ -133,21 +141,47 @@
 			normalizeNumericId(
 				entry.userId ??
 					entry.user_id ??
+					entry.ownerId ??
 					boothNode?.userId ??
 					boothNode?.user_id ??
+					boothNode?.ownerId ??
 					entry.managerId ??
 					entry.manager_id ??
 					ownerNode?.id
 			) ?? null;
 
+		const ownerUsername =
+			normalizeTextValue(
+				entry.manager_username ??
+					entry.managerUsername ??
+					entry.booth_owner_username ??
+					entry.username ??
+					entry.ownerUsername ??
+					entry.hostUsername ??
+					entry.user?.username ??
+					entry.manager?.username ??
+					entry.owner?.username ??
+					boothNode?.user?.username ??
+					boothNode?.manager?.username ??
+					boothNode?.owner?.username ??
+					entry.edges?.user?.username ??
+					entry.edges?.owner?.username ??
+					entry.edges?.manager?.username ??
+					ownerNode?.username
+			) ?? null;
+
 		const name =
-			boothNode?.name ?? entry.name ?? boothNode?.boothName ?? entry.boothName ?? `부스 ${id ?? ''}`;
+			normalizeTextValue(boothNode?.name ?? entry.name ?? boothNode?.boothName ?? entry.boothName) ??
+			`부스 ${id ?? ''}`;
 
 		return {
 			...boothNode,
 			id,
 			name,
 			userId,
+			ownerId: userId,
+			ownerUsername,
+			managerUsername: ownerUsername,
 			owner: ownerNode ?? null,
 			raw: entry
 		};
@@ -186,23 +220,60 @@
 		return candidate === null || candidate === undefined ? null : Number(candidate);
 	}
 
-	function getBoothOwnerIdFromTx(tx) {
-		const direct =
-			tx?.boothOwnerId ??
-			tx?.booth_owner_id ??
-			tx?.booth?.userId ??
-			tx?.booth?.user_id ??
-			tx?.booth?.user?.id ??
-			tx?.edges?.booth?.user?.id ??
-			tx?.edges?.booth?.edges?.user?.id ??
-			null;
-		if (direct !== null && direct !== undefined) {
-			return Number(direct);
-		}
+	function getTxOwnerInfo(tx) {
 		const boothId = getTxBoothId(tx);
-		if (!boothId) return null;
-		const mapped = boothOwnerMap.get(boothId);
-		return mapped === undefined ? null : Number(mapped);
+		const mapped = boothId ? boothOwnerMap.get(Number(boothId)) : null;
+
+		const ownerIdCandidates = [
+			tx?.boothOwnerId,
+			tx?.booth_owner_id,
+			tx?.ownerId,
+			tx?.managerId,
+			tx?.userId,
+			tx?.booth?.userId,
+			tx?.booth?.user_id,
+			tx?.booth?.ownerId,
+			tx?.booth?.managerId,
+			tx?.booth?.user?.id,
+			tx?.edges?.booth?.user?.id,
+			tx?.edges?.booth?.owner?.id,
+			tx?.edges?.booth?.manager?.id,
+			tx?.edges?.booth?.edges?.user?.id
+		];
+
+		const ownerUsernameCandidates = [
+			tx?.boothOwnerUsername,
+			tx?.booth_owner_username,
+			tx?.ownerUsername,
+			tx?.managerUsername,
+			tx?.username,
+			tx?.booth?.user?.username,
+			tx?.booth?.owner?.username,
+			tx?.booth?.manager?.username,
+			tx?.edges?.booth?.user?.username,
+			tx?.edges?.booth?.owner?.username,
+			tx?.edges?.booth?.manager?.username
+		];
+
+		let resolvedId = ownerIdCandidates
+			.map((candidate) => normalizeNumericId(candidate))
+			.find((value) => value !== null && value !== undefined);
+
+		let resolvedUsername =
+			ownerUsernameCandidates.map((candidate) => normalizeTextValue(candidate)).find(Boolean) ?? null;
+
+		if ((resolvedId === null || resolvedId === undefined) && mapped) {
+			resolvedId = mapped?.id ?? mapped?.ownerId ?? null;
+		}
+
+		if (!resolvedUsername && mapped) {
+			resolvedUsername = mapped?.username ?? mapped?.ownerUsername ?? null;
+		}
+
+		return {
+			id: resolvedId ?? null,
+			username: resolvedUsername ?? null
+		};
 	}
 
 	$: loggedIn = Boolean(session.token);
@@ -222,23 +293,30 @@
 	$: boothOwnerMap = new Map(
 		(booths || [])
 			.map((booth) => {
-				const boothId = booth?.id ?? booth?.boothId ?? booth?.booth_id;
-				if (boothId === undefined || boothId === null) {
+				const boothId = normalizeNumericId(booth?.id ?? booth?.boothId ?? booth?.booth_id);
+				if (boothId === null) {
 					return null;
 				}
-				const owner =
-					booth?.userId ??
-					booth?.user_id ??
-					booth?.user?.id ??
-					booth?.owner?.id ??
-					booth?.raw?.userId ??
-					booth?.raw?.user_id ??
-					booth?.raw?.user?.id ??
-					booth?.edges?.user?.id ??
-					null;
-				const normalizedOwner =
-					owner === undefined || owner === null ? null : Number(owner);
-				return [Number(boothId), normalizedOwner];
+				const ownerId =
+					normalizeNumericId(
+						booth?.ownerId ??
+							booth?.userId ??
+							booth?.user_id ??
+							booth?.owner?.id ??
+							booth?.user?.id ??
+							booth?.raw?.userId ??
+							booth?.raw?.user_id ??
+							booth?.raw?.user?.id ??
+							booth?.edges?.user?.id
+					) ?? null;
+				const ownerUsername =
+					normalizeTextValue(
+						booth?.ownerUsername ??
+							booth?.managerUsername ??
+							booth?.owner?.username ??
+							booth?.user?.username
+					) ?? null;
+				return [boothId, { id: ownerId, username: ownerUsername }];
 			})
 			.filter(Boolean)
 	);
@@ -261,11 +339,21 @@
 		if (isAdminRole) {
 			return true;
 		}
-		if (!session.userId) {
+		if (!session.userId && !session.username) {
 			return false;
 		}
-		const ownerId = getBoothOwnerIdFromTx(tx);
-		return ownerId !== null && ownerId === Number(session.userId);
+		const ownerInfo = getTxOwnerInfo(tx);
+		const sessionUserId = normalizeNumericId(session.userId);
+		const sessionUsername =
+			normalizeTextValue(userProfile?.username) ?? normalizeTextValue(session.username);
+		const matchesId =
+			sessionUserId !== null && ownerInfo?.id !== null && ownerInfo?.id === sessionUserId;
+		const matchesUsername =
+			sessionUsername &&
+			ownerInfo?.username &&
+			ownerInfo.username.toLowerCase() === sessionUsername.toLowerCase();
+
+		return matchesId || matchesUsername;
 	});
 	$: incomeTotal = hostTransactions.reduce((sum, tx) => sum + Number(tx?.amount ?? 0), 0);
 
@@ -631,15 +719,15 @@
 	}
 
 	async function handleCreateBooth(event) {
-		const { name, userId } = event.detail || {};
-		if (!name || !userId) {
+		const { name, username } = event.detail || {};
+		if (!name || !username) {
 			return;
 		}
 		globalError = '';
 		try {
 			await api.createBooth({
 				name: name.trim(),
-				user_id: Number(userId)
+				manager_username: username.trim()
 			});
 			await refreshBoothsAndProducts();
 		} catch (error) {
@@ -651,14 +739,14 @@
 	}
 
 	async function handleUpdateBooth(event) {
-		const { id, name, userId } = event.detail || {};
+		const { id, name, username } = event.detail || {};
 		if (!id) return;
 		const payload = {};
 		if (name && name.trim()) {
 			payload.name = name.trim();
 		}
-		if (userId) {
-			payload.user_id = Number(userId);
+		if (username && username.trim()) {
+			payload.manager_username = username.trim();
 		}
 		if (!Object.keys(payload).length) {
 			return;

@@ -5,34 +5,40 @@
 
 	const dispatch = createEventDispatcher();
 
-	let name = '';
-	let userId = '';
+let name = '';
+let managerUsername = '';
 
-	let editingId = null;
-	let editName = '';
-	let editUserId = '';
+let editingId = null;
+let editName = '';
+let editManagerUsername = '';
 
 	function goBack() {
 		dispatch('navigate', 'home');
 	}
 
 	function createBooth() {
-		if (!name.trim() || !userId) return;
-		dispatch('createBooth', { name: name.trim(), userId: Number(userId) });
+		if (!name.trim() || !managerUsername.trim()) return;
+		dispatch('createBooth', { name: name.trim(), username: managerUsername.trim() });
 		name = '';
-		userId = '';
+		managerUsername = '';
 	}
 
 	function startEdit(booth) {
 		editingId = booth.id;
 		editName = booth.name || '';
-		editUserId = booth.userId || booth.user_id || booth.user?.id || '';
+		editManagerUsername =
+			booth.ownerUsername ??
+			booth.managerUsername ??
+			booth.owner?.username ??
+			booth.user?.username ??
+			booth.raw?.user?.username ??
+			'';
 	}
 
 	function cancelEdit() {
 		editingId = null;
 		editName = '';
-		editUserId = '';
+		editManagerUsername = '';
 	}
 
 	function submitEdit() {
@@ -40,7 +46,7 @@
 		dispatch('updateBooth', {
 			id: editingId,
 			name: editName,
-			userId: editUserId
+			username: editManagerUsername
 		});
 		cancelEdit();
 	}
@@ -68,16 +74,16 @@
 					class="rounded-2xl border border-gray-200 px-4 py-3 text-sm focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-100"
 				/>
 				<input
-					type="number"
-					placeholder="담당자 사용자 ID"
-					bind:value={userId}
+					type="text"
+					placeholder="담당자 사용자명"
+					bind:value={managerUsername}
 					class="rounded-2xl border border-gray-200 px-4 py-3 text-sm focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-100"
 				/>
 			</div>
 			<button
 				on:click={createBooth}
 				class="mt-4 w-full rounded-2xl bg-cyan-600 py-3 text-sm font-bold text-white transition hover:bg-cyan-700 disabled:cursor-not-allowed disabled:bg-cyan-200"
-				disabled={!name || !userId}
+				disabled={!name || !managerUsername}
 			>
 				부스 생성
 			</button>
@@ -89,7 +95,14 @@
 					<div class="flex items-center justify-between gap-3">
 						<div>
 							<p class="text-sm font-semibold text-gray-900">{booth.name}</p>
-							<p class="text-xs text-gray-500">ID {booth.id} · 담당자 {booth.userId ?? booth.user_id ?? booth.user?.id ?? '-'}</p>
+							<p class="text-xs text-gray-500">
+								ID {booth.id} · 담당자
+								{booth.ownerUsername ??
+									booth.managerUsername ??
+									booth.owner?.username ??
+									booth.user?.username ??
+									'-'}
+							</p>
 						</div>
 						<div class="flex gap-2">
 							<button
@@ -116,9 +129,9 @@
 								class="w-full rounded-2xl border border-gray-200 px-4 py-2 text-sm focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-100"
 							/>
 							<input
-								type="number"
-								placeholder="담당자 ID"
-								bind:value={editUserId}
+								type="text"
+								placeholder="담당자 사용자명"
+								bind:value={editManagerUsername}
 								class="w-full rounded-2xl border border-gray-200 px-4 py-2 text-sm focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-100"
 							/>
 							<div class="flex gap-2">
